@@ -62,9 +62,17 @@ def initialize():
 def exchange_synth(_initial: address, _target: address, _amount: uint256) -> bool:
     assert msg.sender == self.admin
 
+    source_key: bytes32 = self.currency_keys[_initial]
+    if source_key == EMPTY_BYTES32:
+        source_key = Synth(_initial).currencyKey()
+        self.currency_keys[_initial] = source_key
+
+    dest_key: bytes32 = self.currency_keys[_target]
+    if dest_key == EMPTY_BYTES32:
+        dest_key = Synth(_target).currencyKey()
+        self.currency_keys[_target] = dest_key
+
     self.synth = _target
-    source_key: bytes32 = Synth(_initial).currencyKey()
-    dest_key: bytes32 = Synth(_target).currencyKey()
     Synthetix(SNX).exchange(source_key, _amount, dest_key)
 
     return True
@@ -81,13 +89,7 @@ def settle_and_swap(
     assert msg.sender == self.admin
 
     synth: address = self.synth
-
-    currency_key: bytes32 = self.currency_keys[synth]
-    if currency_key == EMPTY_BYTES32:
-        currency_key = Synth(synth).currencyKey()
-        self.currency_keys[synth] = currency_key
-
-    Synthetix(SNX).settle(currency_key)
+    Synthetix(SNX).settle(self.currency_keys[synth])
 
     registry_swap: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
     if not self.is_approved[synth][registry_swap]:
@@ -104,14 +106,7 @@ def withdraw(_receiver: address, _amount: uint256) -> uint256:
     assert msg.sender == self.admin
 
     synth: address = self.synth
-
-    currency_key: bytes32 = self.currency_keys[synth]
-    if currency_key == EMPTY_BYTES32:
-        currency_key = Synth(synth).currencyKey()
-        self.currency_keys[synth] = currency_key
-
-    Synthetix(SNX).settle(currency_key)
-
+    Synthetix(SNX).settle(self.currency_keys[synth])
     ERC20(synth).transfer(_receiver, _amount)
 
     return ERC20(synth).balanceOf(self)
@@ -119,13 +114,6 @@ def withdraw(_receiver: address, _amount: uint256) -> uint256:
 
 @external
 def settle() -> bool:
-    synth: address = self.synth
-
-    currency_key: bytes32 = self.currency_keys[synth]
-    if currency_key == EMPTY_BYTES32:
-        currency_key = Synth(synth).currencyKey()
-        self.currency_keys[synth] = currency_key
-
-    Synthetix(SNX).settle(currency_key)
+    Synthetix(SNX).settle(self.currency_keys[self.synth])
 
     return True
