@@ -170,91 +170,26 @@ def isApprovedForAll(_owner: address, _operator: address) -> bool:
     return (self.ownerToOperators[_owner])[_operator]
 
 
-### TRANSFER FUNCTION HELPERS ###
-
-@view
 @internal
-def _isApprovedOrOwner(_spender: address, _tokenId: uint256) -> bool:
-    """
-    @dev Returns whether the given spender can transfer a given token ID
-    @param spender address of the spender to query
-    @param tokenId uint256 ID of the token to be transferred
-    @return bool whether the msg.sender is approved for the given token ID,
-        is an operator of the owner, or is the owner of the token
-    """
+def _transfer(_from: address, _to: address, _tokenId: uint256, _caller: address):
+    assert _from != ZERO_ADDRESS
+    assert _to != ZERO_ADDRESS
     owner: address = self.idToOwner[_tokenId]
-    spenderIsOwner: bool = owner == _spender
-    spenderIsApproved: bool = _spender == self.idToApprovals[_tokenId]
-    spenderIsApprovedForAll: bool = (self.ownerToOperators[owner])[_spender]
-    return (spenderIsOwner or spenderIsApproved) or spenderIsApprovedForAll
+    assert owner == _from
 
+    approved_for: address = self.idToApprovals[_tokenId]
+    if _caller != _from:
+        assert approved_for == _caller or self.ownerToOperators[owner][_caller]
 
-@internal
-def _addTokenTo(_to: address, _tokenId: uint256):
-    """
-    @dev Add a NFT to a given address
-         Throws if `_tokenId` is owned by someone.
-    """
-    # Throws if `_tokenId` is owned by someone
-    assert self.idToOwner[_tokenId] == ZERO_ADDRESS
-    # Change the owner
-    self.idToOwner[_tokenId] = _to
-    # Change count tracking
-    self.ownerToNFTokenCount[_to] += 1
-
-
-@internal
-def _removeTokenFrom(_from: address, _tokenId: uint256):
-    """
-    @dev Remove a NFT from a given address
-         Throws if `_from` is not the current owner.
-    """
-    # Throws if `_from` is not the current owner
-    assert self.idToOwner[_tokenId] == _from
-    # Change the owner
-    self.idToOwner[_tokenId] = ZERO_ADDRESS
-    # Change count tracking
-    self.ownerToNFTokenCount[_from] -= 1
-
-
-@internal
-def _clearApproval(_owner: address, _tokenId: uint256):
-    """
-    @dev Clear an approval of a given address
-         Throws if `_owner` is not the current owner.
-    """
-    # Throws if `_owner` is not the current owner
-    assert self.idToOwner[_tokenId] == _owner
-    if self.idToApprovals[_tokenId] != ZERO_ADDRESS:
-        # Reset approvals
+    if approved_for != ZERO_ADDRESS:
         self.idToApprovals[_tokenId] = ZERO_ADDRESS
 
+    self.idToOwner[_tokenId] = _to
+    self.ownerToNFTokenCount[_from] -= 1
+    self.ownerToNFTokenCount[_to] += 1
 
-@internal
-def _transferFrom(_from: address, _to: address, _tokenId: uint256, _sender: address):
-    """
-    @dev Exeute transfer of a NFT.
-         Throws unless `msg.sender` is the current owner, an authorized operator, or the approved
-         address for this NFT. (NOTE: `msg.sender` not allowed in private function so pass `_sender`.)
-         Throws if `_to` is the zero address.
-         Throws if `_from` is not the current owner.
-         Throws if `_tokenId` is not a valid NFT.
-    """
-    # Check requirements
-    assert self._isApprovedOrOwner(_sender, _tokenId)
-    # Throws if `_to` is the zero address
-    assert _to != ZERO_ADDRESS
-    # Clear approval. Throws if `_from` is not the current owner
-    self._clearApproval(_from, _tokenId)
-    # Remove NFT. Throws if `_tokenId` is not a valid NFT
-    self._removeTokenFrom(_from, _tokenId)
-    # Add NFT
-    self._addTokenTo(_to, _tokenId)
-    # Log the transfer
     log Transfer(_from, _to, _tokenId)
 
-
-### TRANSFER FUNCTIONS ###
 
 @external
 def transferFrom(_from: address, _to: address, _tokenId: uint256):
@@ -270,7 +205,7 @@ def transferFrom(_from: address, _to: address, _tokenId: uint256):
     @param _to The new owner.
     @param _tokenId The NFT to transfer.
     """
-    self._transferFrom(_from, _to, _tokenId, msg.sender)
+    self._transfer(_from, _to, _tokenId, msg.sender)
 
 
 @external
@@ -295,7 +230,7 @@ def safeTransferFrom(
     @param _tokenId The NFT to transfer.
     @param _data Additional data with no specified format, sent in call to `_to`.
     """
-    self._transferFrom(_from, _to, _tokenId, msg.sender)
+    self._transfer(_from, _to, _tokenId, msg.sender)
     if _to.is_contract: # check if `_to` is a contract address
         returnValue: bytes32 = ERC721Receiver(_to).onERC721Received(msg.sender, _from, _tokenId, _data)
         # Throws if transfer destination is a contract which does not implement 'onERC721Received'
