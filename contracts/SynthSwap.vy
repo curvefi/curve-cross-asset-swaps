@@ -29,6 +29,7 @@ interface Synth:
 interface Settler:
     def initialize(): nonpayable
     def synth() -> address: view
+    def time_to_settle() -> uint256: view
     def exchange_synth(_initial: address, _target: address, _amount: uint256) -> bool: nonpayable
     def settle_and_swap(
         _target: address,
@@ -63,6 +64,13 @@ event ApprovalForAll:
     owner: indexed(address)
     operator: indexed(address)
     approved: bool
+
+
+struct TokenInfo:
+    owner: address
+    synth: address
+    underlying_balance: uint256
+    time_to_settle: uint256
 
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
@@ -462,3 +470,18 @@ def add_synth(_synth: address, _pool: address):
             has_synth = True
         else:
             self.swappable_synth[coin] = _synth
+
+
+@view
+@external
+def token_info(_token_id: uint256) -> TokenInfo:
+    info: TokenInfo = empty(TokenInfo)
+    info.owner = self.idToOwner[_token_id]
+    assert info.owner != ZERO_ADDRESS
+
+    settler: address = convert(_token_id, address)
+    info.synth = Settler(settler).synth()
+    info.underlying_balance = ERC20(info.synth).balanceOf(settler)
+    info.time_to_settle = Settler(settler).time_to_settle()
+
+    return info

@@ -32,11 +32,15 @@ interface Synthetix:
     ): nonpayable
     def settle(currencyKey: bytes32) -> uint256[3]: nonpayable
 
+interface Exchanger:
+    def maxSecsLeftInWaitingPeriod(account: address, currencyKey: bytes32) -> uint256: view
+
 interface Synth:
     def currencyKey() -> bytes32: nonpayable
 
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
+EXCHANGER: constant(address) = 0x0bfDc04B38251394542586969E2356d0D731f7DE
 SNX: constant(address) = 0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F
 
 is_approved: HashMap[address, HashMap[address, bool]]
@@ -117,3 +121,9 @@ def settle() -> bool:
     Synthetix(SNX).settle(self.currency_keys[self.synth])
 
     return True
+
+
+@view
+@external
+def time_to_settle() -> uint256:
+    return Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(self, self.currency_keys[self.synth])
