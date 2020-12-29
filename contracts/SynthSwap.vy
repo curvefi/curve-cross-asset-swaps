@@ -302,14 +302,35 @@ def swap_into_synth(
         assert msg.sender == _receiver
         assert Settler(settler).synth() == _synth
 
-    ERC20(_from).transferFrom(msg.sender, self, _amount)
+    response: Bytes[32] = raw_call(
+        _from,
+        concat(
+            method_id("transferFrom(address,address,uint256)"),
+            convert(msg.sender, bytes32),
+            convert(self, bytes32),
+            convert(_amount, bytes32),
+        ),
+        max_outsize=32,
+    )
+    if len(response) != 0:
+        assert convert(response, bool)
 
     intermediate_synth: address = self.swappable_synth[_from]
     pool: address = self.synth_pools[intermediate_synth]
 
     registry_swap: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
     if not self.is_approved[_from][registry_swap]:
-        ERC20(_from).approve(registry_swap, MAX_UINT256)
+        response = raw_call(
+            _from,
+            concat(
+                method_id("approve(address,uint256)"),
+                convert(registry_swap, bytes32),
+                convert(MAX_UINT256, bytes32),
+            ),
+            max_outsize=32,
+        )
+        if len(response) != 0:
+            assert convert(response, bool)
         self.is_approved[_from][registry_swap] = True
 
     received: uint256 = RegistrySwap(registry_swap).exchange(
