@@ -48,6 +48,7 @@ currency_keys: HashMap[address, bytes32]
 
 admin: public(address)
 synth: public(address)
+is_settled: public(bool)
 
 
 @external
@@ -78,6 +79,7 @@ def exchange_synth(_initial: address, _target: address, _amount: uint256) -> boo
 
     self.synth = _target
     Synthetix(SNX).exchange(source_key, _amount, dest_key)
+    self.is_settled = False
 
     return True
 
@@ -93,7 +95,9 @@ def settle_and_swap(
     assert msg.sender == self.admin
 
     synth: address = self.synth
-    Synthetix(SNX).settle(self.currency_keys[synth])
+    if not self.is_settled:
+        Synthetix(SNX).settle(self.currency_keys[synth])
+        self.is_settled = True
 
     registry_swap: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
     if not self.is_approved[synth][registry_swap]:
@@ -110,7 +114,10 @@ def withdraw(_receiver: address, _amount: uint256) -> uint256:
     assert msg.sender == self.admin
 
     synth: address = self.synth
-    Synthetix(SNX).settle(self.currency_keys[synth])
+    if not self.is_settled:
+        Synthetix(SNX).settle(self.currency_keys[synth])
+        self.is_settled = True
+
     ERC20(synth).transfer(_receiver, _amount)
 
     return ERC20(synth).balanceOf(self)
@@ -119,6 +126,7 @@ def withdraw(_receiver: address, _amount: uint256) -> uint256:
 @external
 def settle() -> bool:
     Synthetix(SNX).settle(self.currency_keys[self.synth])
+    self.is_settled = True
 
     return True
 
