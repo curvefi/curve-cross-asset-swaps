@@ -277,6 +277,7 @@ def setApprovalForAll(_operator: address, _approved: bool):
     log ApprovalForAll(msg.sender, _operator, _approved)
 
 
+@payable
 @external
 def swap_into_synth(
     _from: address,
@@ -302,36 +303,36 @@ def swap_into_synth(
         assert msg.sender == _receiver
         assert Settler(settler).synth() == _synth
 
-    response: Bytes[32] = raw_call(
-        _from,
-        concat(
-            method_id("transferFrom(address,address,uint256)"),
-            convert(msg.sender, bytes32),
-            convert(self, bytes32),
-            convert(_amount, bytes32),
-        ),
-        max_outsize=32,
-    )
-    if len(response) != 0:
-        assert convert(response, bool)
-
-    intermediate_synth: address = self.swappable_synth[_from]
-    pool: address = self.synth_pools[intermediate_synth]
-
     registry_swap: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
-    if not self.is_approved[_from][registry_swap]:
-        response = raw_call(
+    if _from != 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+        response: Bytes[32] = raw_call(
             _from,
             concat(
-                method_id("approve(address,uint256)"),
-                convert(registry_swap, bytes32),
-                convert(MAX_UINT256, bytes32),
+                method_id("transferFrom(address,address,uint256)"),
+                convert(msg.sender, bytes32),
+                convert(self, bytes32),
+                convert(_amount, bytes32),
             ),
             max_outsize=32,
         )
         if len(response) != 0:
             assert convert(response, bool)
-        self.is_approved[_from][registry_swap] = True
+        if not self.is_approved[_from][registry_swap]:
+            response = raw_call(
+                _from,
+                concat(
+                    method_id("approve(address,uint256)"),
+                    convert(registry_swap, bytes32),
+                    convert(MAX_UINT256, bytes32),
+                ),
+                max_outsize=32,
+            )
+            if len(response) != 0:
+                assert convert(response, bool)
+            self.is_approved[_from][registry_swap] = True
+
+    intermediate_synth: address = self.swappable_synth[_from]
+    pool: address = self.synth_pools[intermediate_synth]
 
     received: uint256 = RegistrySwap(registry_swap).exchange(
         pool,
@@ -339,7 +340,8 @@ def swap_into_synth(
         intermediate_synth,
         _amount,
         _expected,
-        settler
+        settler,
+        value=msg.value
     )
     Settler(settler).exchange_synth(intermediate_synth, _synth, received)
 
