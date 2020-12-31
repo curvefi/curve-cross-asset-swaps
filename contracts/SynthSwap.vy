@@ -91,10 +91,10 @@ settler_implementation: address
 settler_proxies: address[4294967296]
 settler_count: uint256
 
-# synth address -> curve pool
-synth_pools: HashMap[address, address]
-# coin -> synth
-swappable_synth: HashMap[address, address]
+# synth -> curve pool where it can be traded
+synth_pools: public(HashMap[address, address])
+# coin -> synth that it can be swapped for
+swappable_synth: public(HashMap[address, address])
 # coin -> spender -> is approved?
 is_approved: HashMap[address, HashMap[address, bool]]
 
@@ -412,7 +412,9 @@ def settle(_token_id: uint256) -> bool:
 
 @external
 def add_synth(_synth: address, _pool: address):
-    assert self.synth_pools[_synth] == ZERO_ADDRESS
+    assert self.synth_pools[_synth] == ZERO_ADDRESS  # dev: already added
+
+    # this will revert if `_synth` is not actually a synth
     Synth(_synth).currencyKey()
 
     registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
@@ -421,7 +423,7 @@ def add_synth(_synth: address, _pool: address):
     has_synth: bool = False
     for coin in pool_coins:
         if coin == ZERO_ADDRESS:
-            assert has_synth
+            assert has_synth  # dev: synth not in pool
             break
         if coin == _synth:
             self.synth_pools[_synth] = _pool
