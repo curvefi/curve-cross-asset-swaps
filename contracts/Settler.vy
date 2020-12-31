@@ -135,3 +135,9 @@ def settle() -> bool:
 @external
 def time_to_settle() -> uint256:
     return Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(self, self.currency_keys[self.synth])
+
+
+@view
+@external
+def token_id() -> uint256:
+    return convert(self, uint256)
