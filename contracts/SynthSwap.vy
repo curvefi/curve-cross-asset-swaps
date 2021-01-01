@@ -28,7 +28,7 @@ interface RegistrySwap:
     ) -> uint256: payable
 
 interface Synth:
-    def currencyKey() -> bytes32: view
+    def currencyKey() -> bytes32: nonpayable
 
 interface Exchanger:
     def getAmountsForExchange(
@@ -36,13 +36,20 @@ interface Exchanger:
         sourceCurrencyKey: bytes32,
         destinationCurrencyKey: bytes32
     ) -> (uint256, uint256, uint256): view
+    def maxSecsLeftInWaitingPeriod(account: address, currencyKey: bytes32) -> uint256: view
+    def settle(user: address, currencyKey: bytes32): nonpayable
 
 interface Settler:
     def initialize(): nonpayable
     def synth() -> address: view
     def time_to_settle() -> uint256: view
-    def exchange_synth(_initial: address, _target: address, _amount: uint256) -> bool: nonpayable
-    def settle_and_swap(
+    def exchange_via_snx(
+        _target: address,
+        _amount: uint256,
+        _source_key: bytes32,
+        _dest_key: bytes32
+    ) -> bool: nonpayable
+    def exchange_via_curve(
         _target: address,
         _pool: address,
         _amount: uint256,
@@ -50,7 +57,6 @@ interface Settler:
         _receiver: address,
     ) -> uint256: nonpayable
     def withdraw(_receiver: address, _amount: uint256) -> uint256: nonpayable
-    def settle() -> bool: nonpayable
 
 interface ERC721Receiver:
     def onERC721Received(
@@ -109,7 +115,10 @@ synth_pools: public(HashMap[address, address])
 swappable_synth: public(HashMap[address, address])
 # coin -> spender -> is approved?
 is_approved: HashMap[address, HashMap[address, bool]]
-
+# synth -> currency key
+currency_keys: HashMap[address, bytes32]
+# token id -> is synth settled?
+is_settled: public(HashMap[uint256, bool])
 
 @external
 def __init__(_settler_implementation: address):
@@ -306,8 +315,8 @@ def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256
 
     return Exchanger(EXCHANGER).getAmountsForExchange(
         received,
-        Synth(intermediate_synth).currencyKey(),
-        Synth(_synth).currencyKey()
+        self.currency_keys[intermediate_synth],
+        self.currency_keys[_synth],
     )[0]
 
 
@@ -393,10 +402,16 @@ def swap_into_synth(
     )
 
     initial_balance: uint256 = ERC20(_synth).balanceOf(settler)
-    Settler(settler).exchange_synth(intermediate_synth, _synth, received)
+    Settler(settler).exchange_via_snx(
+        _synth,
+        received,
+        self.currency_keys[intermediate_synth],
+        self.currency_keys[_synth]
+    )
     assert ERC20(_synth).balanceOf(settler) - initial_balance >= _expected, "Rekt by slippage"
 
     token_id: uint256 = convert(settler, uint256)
+    self.is_settled[token_id] = False
     if _token_id == 0:
         self.idToOwner[token_id] = _receiver
         self.ownerToNFTokenCount[_receiver] += 1
@@ -416,11 +431,15 @@ def swap_from_synth(
     assert msg.sender == self.idToOwner[_token_id]
 
     settler: address = convert(_token_id, address)
-
     synth: address = self.swappable_synth[_target]
     pool: address = self.synth_pools[synth]
 
-    remaining_balance: uint256 = Settler(settler).settle_and_swap(_target, pool, _amount, _expected, _receiver)
+    if not self.is_settled[_token_id]:
+        currency_key: bytes32 = self.currency_keys[synth]
+        Exchanger(EXCHANGER).settle(settler, currency_key)
+        self.is_settled[_token_id] = True
+
+    remaining_balance: uint256 = Settler(settler).exchange_via_curve(_target, pool, _amount, _expected, _receiver)
 
     if remaining_balance == 0:
         self.idToOwner[_token_id] = ZERO_ADDRESS
@@ -439,6 +458,13 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
     assert msg.sender == self.idToOwner[_token_id]
 
     settler: address = convert(_token_id, address)
+
+    if not self.is_settled[_token_id]:
+        synth: address = Settler(settler).synth()
+        currency_key: bytes32 = self.currency_keys[synth]
+        Exchanger(EXCHANGER).settle(settler, currency_key)
+        self.is_settled[_token_id] = True
+
     remaining_balance: uint256 = Settler(settler).withdraw(_receiver, _amount)
 
     if remaining_balance == 0:
@@ -455,8 +481,14 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
 
 @external
 def settle(_token_id: uint256) -> bool:
-    settler: address = convert(_token_id, address)
-    Settler(settler).settle()
+    if not self.is_settled[_token_id]:
+        assert self.idToOwner[_token_id] != ZERO_ADDRESS, "Unknown Token ID"
+
+        settler: address = convert(_token_id, address)
+        synth: address = Settler(settler).synth()
+        currency_key: bytes32 = self.currency_keys[synth]
+        Exchanger(EXCHANGER).settle(settler, currency_key)  # dev: settlement failed
+        self.is_settled[_token_id] = True
 
     return True
 
@@ -466,7 +498,7 @@ def add_synth(_synth: address, _pool: address):
     assert self.synth_pools[_synth] == ZERO_ADDRESS  # dev: already added
 
     # this will revert if `_synth` is not actually a synth
-    Synth(_synth).currencyKey()
+    self.currency_keys[_synth] = Synth(_synth).currencyKey()
 
     registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
     pool_coins: address[8] = Registry(registry).get_coins(_pool)
@@ -493,6 +525,6 @@ def token_info(_token_id: uint256) -> TokenInfo:
     settler: address = convert(_token_id, address)
     info.synth = Settler(settler).synth()
     info.underlying_balance = ERC20(info.synth).balanceOf(settler)
-    info.time_to_settle = Settler(settler).time_to_settle()
+    info.time_to_settle = Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(settler, self.currency_keys[info.synth])
 
     return info
