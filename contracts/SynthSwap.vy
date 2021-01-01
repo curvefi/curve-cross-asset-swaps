@@ -10,8 +10,12 @@ interface AddressProvider:
     def get_registry() -> address: view
     def get_address(_id: uint256) -> address: view
 
+interface Curve:
+    def get_dy(i: int128, j: int128, dx: uint256) -> uint256: view
+
 interface Registry:
     def get_coins(_pool: address) -> address[8]: view
+    def get_coin_indices(pool: address, _from: address, _to: address) -> (int128, int128, bool): view
 
 interface RegistrySwap:
     def exchange(
@@ -24,7 +28,14 @@ interface RegistrySwap:
     ) -> uint256: payable
 
 interface Synth:
-    def currencyKey() -> bytes32: nonpayable
+    def currencyKey() -> bytes32: view
+
+interface Exchanger:
+    def getAmountsForExchange(
+        sourceAmount: uint256,
+        sourceCurrencyKey: bytes32,
+        destinationCurrencyKey: bytes32
+    ) -> (uint256, uint256, uint256): view
 
 interface Settler:
     def initialize(): nonpayable
@@ -74,6 +85,7 @@ struct TokenInfo:
 
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
+EXCHANGER: constant(address) = 0x0bfDc04B38251394542586969E2356d0D731f7DE
 
 # @dev Mapping from NFT ID to the address that owns it.
 idToOwner: HashMap[uint256, address]
@@ -277,6 +289,42 @@ def setApprovalForAll(_operator: address, _approved: bool):
     log ApprovalForAll(msg.sender, _operator, _approved)
 
 
+@view
+@external
+def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256) -> uint256:
+    registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
+
+    intermediate_synth: address = self.swappable_synth[_from]
+    pool: address = self.synth_pools[intermediate_synth]
+
+    i: int128 = 0
+    j: int128 = 0
+    is_underlying: bool = False
+    i, j, is_underlying = Registry(registry).get_coin_indices(pool, _from, intermediate_synth)
+
+    received: uint256 = Curve(pool).get_dy(i, j, _amount)
+
+    return Exchanger(EXCHANGER).getAmountsForExchange(
+        received,
+        Synth(intermediate_synth).currencyKey(),
+        Synth(_synth).currencyKey()
+    )[0]
+
+
+@view
+@external
+def get_swap_from_synth_amount(_synth: address, _to: address, _amount: uint256) -> uint256:
+    registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
+    pool: address = self.synth_pools[_synth]
+
+    i: int128 = 0
+    j: int128 = 0
+    is_underlying: bool = False
+    i, j, is_underlying = Registry(registry).get_coin_indices(pool, _synth, _to)
+
+    return Curve(pool).get_dy(i, j, _amount)
+
+
 @payable
 @external
 def swap_into_synth(
@@ -339,11 +387,14 @@ def swap_into_synth(
         _from,
         intermediate_synth,
         _amount,
-        _expected,
+        0,
         settler,
         value=msg.value
     )
+
+    initial_balance: uint256 = ERC20(_synth).balanceOf(settler)
     Settler(settler).exchange_synth(intermediate_synth, _synth, received)
+    assert ERC20(_synth).balanceOf(settler) - initial_balance >= _expected, "Rekt by slippage"
 
     token_id: uint256 = convert(settler, uint256)
     if _token_id == 0:
