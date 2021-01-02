@@ -62,7 +62,7 @@ interface ERC721Receiver:
     def onERC721Received(
             _operator: address,
             _from: address,
-            _tokenId: uint256,
+            _token_id: uint256,
             _data: Bytes[1024]
         ) -> bytes32: view
 
@@ -70,12 +70,12 @@ interface ERC721Receiver:
 event Transfer:
     sender: indexed(address)
     receiver: indexed(address)
-    tokenId: indexed(uint256)
+    token_id: indexed(uint256)
 
 event Approval:
     owner: indexed(address)
     approved: indexed(address)
-    tokenId: indexed(uint256)
+    token_id: indexed(uint256)
 
 event ApprovalForAll:
     owner: indexed(address)
@@ -93,17 +93,14 @@ struct TokenInfo:
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
 EXCHANGER: constant(address) = 0x0bfDc04B38251394542586969E2356d0D731f7DE
 
-# @dev Mapping from NFT ID to the address that owns it.
-idToOwner: HashMap[uint256, address]
-
-# @dev Mapping from NFT ID to approved address.
-idToApprovals: HashMap[uint256, address]
-
-# @dev Mapping from owner address to count of his tokens.
-ownerToNFTokenCount: HashMap[address, uint256]
-
-# @dev Mapping from owner address to mapping of operator addresses.
-ownerToOperators: HashMap[address, HashMap[address, bool]]
+# token id -> owner
+id_to_owner: HashMap[uint256, address]
+# token id -> address approved to transfer this nft
+id_to_approval: HashMap[uint256, address]
+# owner -> number of nfts
+owner_to_token_count: HashMap[address, uint256]
+# owner -> operator -> is approved?
+owner_to_operators: HashMap[address, HashMap[address, bool]]
 
 settler_implementation: address
 settler_proxies: address[4294967296]
@@ -113,12 +110,12 @@ settler_count: uint256
 synth_pools: public(HashMap[address, address])
 # coin -> synth that it can be swapped for
 swappable_synth: public(HashMap[address, address])
-# coin -> spender -> is approved?
+# token id -> is synth settled?
+is_settled: public(HashMap[uint256, bool])
+# coin -> spender -> is approved to transfer from this contract?
 is_approved: HashMap[address, HashMap[address, bool]]
 # synth -> currency key
 currency_keys: HashMap[address, bytes32]
-# token id -> is synth settled?
-is_settled: public(HashMap[uint256, bool])
 
 @external
 def __init__(_settler_implementation: address):
@@ -130,12 +127,12 @@ def __init__(_settler_implementation: address):
 
 @view
 @external
-def supportsInterface(_interfaceID: bytes32) -> bool:
+def supportsInterface(_interface_id: bytes32) -> bool:
     """
     @dev Interface identification is specified in ERC-165.
-    @param _interfaceID Id of the interface
+    @param _interface_id Id of the interface
     """
-    return _interfaceID in [
+    return _interface_id in [
         0x0000000000000000000000000000000000000000000000000000000001ffc9a7,  # ERC165
         0x0000000000000000000000000000000000000000000000000000000080ac58cd,  # ERC721
     ]
@@ -150,34 +147,34 @@ def balanceOf(_owner: address) -> uint256:
     @param _owner Address for whom to query the balance.
     """
     assert _owner != ZERO_ADDRESS
-    return self.ownerToNFTokenCount[_owner]
+    return self.owner_to_token_count[_owner]
 
 
 @view
 @external
-def ownerOf(_tokenId: uint256) -> address:
+def ownerOf(_token_id: uint256) -> address:
     """
     @dev Returns the address of the owner of the NFT.
-         Throws if `_tokenId` is not a valid NFT.
-    @param _tokenId The identifier for an NFT.
+         Throws if `_token_id` is not a valid NFT.
+    @param _token_id The identifier for an NFT.
     """
-    owner: address = self.idToOwner[_tokenId]
-    # Throws if `_tokenId` is not a valid NFT
+    owner: address = self.id_to_owner[_token_id]
+    # Throws if `_token_id` is not a valid NFT
     assert owner != ZERO_ADDRESS
     return owner
 
 
 @view
 @external
-def getApproved(_tokenId: uint256) -> address:
+def getApproved(_token_id: uint256) -> address:
     """
     @dev Get the approved address for a single NFT.
-         Throws if `_tokenId` is not a valid NFT.
-    @param _tokenId ID of the NFT to query the approval of.
+         Throws if `_token_id` is not a valid NFT.
+    @param _token_id ID of the NFT to query the approval of.
     """
-    # Throws if `_tokenId` is not a valid NFT
-    assert self.idToOwner[_tokenId] != ZERO_ADDRESS
-    return self.idToApprovals[_tokenId]
+    # Throws if `_token_id` is not a valid NFT
+    assert self.id_to_owner[_token_id] != ZERO_ADDRESS
+    return self.id_to_approval[_token_id]
 
 
 @view
@@ -188,52 +185,52 @@ def isApprovedForAll(_owner: address, _operator: address) -> bool:
     @param _owner The address that owns the NFTs.
     @param _operator The address that acts on behalf of the owner.
     """
-    return (self.ownerToOperators[_owner])[_operator]
+    return (self.owner_to_operators[_owner])[_operator]
 
 
 @internal
-def _transfer(_from: address, _to: address, _tokenId: uint256, _caller: address):
+def _transfer(_from: address, _to: address, _token_id: uint256, _caller: address):
     assert _from != ZERO_ADDRESS
     assert _to != ZERO_ADDRESS
-    owner: address = self.idToOwner[_tokenId]
+    owner: address = self.id_to_owner[_token_id]
     assert owner == _from
 
-    approved_for: address = self.idToApprovals[_tokenId]
+    approved_for: address = self.id_to_approval[_token_id]
     if _caller != _from:
-        assert approved_for == _caller or self.ownerToOperators[owner][_caller]
+        assert approved_for == _caller or self.owner_to_operators[owner][_caller]
 
     if approved_for != ZERO_ADDRESS:
-        self.idToApprovals[_tokenId] = ZERO_ADDRESS
+        self.id_to_approval[_token_id] = ZERO_ADDRESS
 
-    self.idToOwner[_tokenId] = _to
-    self.ownerToNFTokenCount[_from] -= 1
-    self.ownerToNFTokenCount[_to] += 1
+    self.id_to_owner[_token_id] = _to
+    self.owner_to_token_count[_from] -= 1
+    self.owner_to_token_count[_to] += 1
 
-    log Transfer(_from, _to, _tokenId)
+    log Transfer(_from, _to, _token_id)
 
 
 @external
-def transferFrom(_from: address, _to: address, _tokenId: uint256):
+def transferFrom(_from: address, _to: address, _token_id: uint256):
     """
     @dev Throws unless `msg.sender` is the current owner, an authorized operator, or the approved
          address for this NFT.
          Throws if `_from` is not the current owner.
          Throws if `_to` is the zero address.
-         Throws if `_tokenId` is not a valid NFT.
+         Throws if `_token_id` is not a valid NFT.
     @notice The caller is responsible to confirm that `_to` is capable of receiving NFTs or else
             they maybe be permanently lost.
     @param _from The current owner of the NFT.
     @param _to The new owner.
-    @param _tokenId The NFT to transfer.
+    @param _token_id The NFT to transfer.
     """
-    self._transfer(_from, _to, _tokenId, msg.sender)
+    self._transfer(_from, _to, _token_id, msg.sender)
 
 
 @external
 def safeTransferFrom(
         _from: address,
         _to: address,
-        _tokenId: uint256,
+        _token_id: uint256,
         _data: Bytes[1024]=b""
     ):
     """
@@ -242,44 +239,42 @@ def safeTransferFrom(
          approved address for this NFT.
          Throws if `_from` is not the current owner.
          Throws if `_to` is the zero address.
-         Throws if `_tokenId` is not a valid NFT.
+         Throws if `_token_id` is not a valid NFT.
          If `_to` is a smart contract, it calls `onERC721Received` on `_to` and throws if
          the return value is not `bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))`.
          NOTE: bytes4 is represented by bytes32 with padding
     @param _from The current owner of the NFT.
     @param _to The new owner.
-    @param _tokenId The NFT to transfer.
+    @param _token_id The NFT to transfer.
     @param _data Additional data with no specified format, sent in call to `_to`.
     """
-    self._transfer(_from, _to, _tokenId, msg.sender)
+    self._transfer(_from, _to, _token_id, msg.sender)
     if _to.is_contract: # check if `_to` is a contract address
-        returnValue: bytes32 = ERC721Receiver(_to).onERC721Received(msg.sender, _from, _tokenId, _data)
+        response: bytes32 = ERC721Receiver(_to).onERC721Received(msg.sender, _from, _token_id, _data)
         # Throws if transfer destination is a contract which does not implement 'onERC721Received'
-        assert returnValue == method_id("onERC721Received(address,address,uint256,bytes)", output_type=bytes32)
+        assert response == method_id("onERC721Received(address,address,uint256,bytes)", output_type=bytes32)
 
 
 @external
-def approve(_approved: address, _tokenId: uint256):
+def approve(_approved: address, _token_id: uint256):
     """
     @dev Set or reaffirm the approved address for an NFT. The zero address indicates there is no approved address.
          Throws unless `msg.sender` is the current NFT owner, or an authorized operator of the current owner.
-         Throws if `_tokenId` is not a valid NFT. (NOTE: This is not written the EIP)
+         Throws if `_token_id` is not a valid NFT. (NOTE: This is not written the EIP)
          Throws if `_approved` is the current owner. (NOTE: This is not written the EIP)
     @param _approved Address to be approved for the given NFT ID.
-    @param _tokenId ID of the token to be approved.
+    @param _token_id ID of the token to be approved.
     """
-    owner: address = self.idToOwner[_tokenId]
-    # Throws if `_tokenId` is not a valid NFT
+    owner: address = self.id_to_owner[_token_id]
+    # Throws if `_token_id` is not a valid NFT
     assert owner != ZERO_ADDRESS
     # Throws if `_approved` is the current owner
     assert _approved != owner
     # Check requirements
-    senderIsOwner: bool = self.idToOwner[_tokenId] == msg.sender
-    senderIsApprovedForAll: bool = (self.ownerToOperators[owner])[msg.sender]
-    assert (senderIsOwner or senderIsApprovedForAll)
+    assert msg.sender == self.id_to_owner[_token_id] or self.owner_to_operators[owner][msg.sender]
     # Set the approval
-    self.idToApprovals[_tokenId] = _approved
-    log Approval(owner, _approved, _tokenId)
+    self.id_to_approval[_token_id] = _approved
+    log Approval(owner, _approved, _token_id)
 
 
 @external
@@ -294,7 +289,7 @@ def setApprovalForAll(_operator: address, _approved: bool):
     """
     # Throws if `_operator` is the `msg.sender`
     assert _operator != msg.sender
-    self.ownerToOperators[msg.sender][_operator] = _approved
+    self.owner_to_operators[msg.sender][_operator] = _approved
     log ApprovalForAll(msg.sender, _operator, _approved)
 
 
@@ -356,7 +351,7 @@ def swap_into_synth(
             settler = self.settler_proxies[count]
             self.settler_count = count
     else:
-        assert msg.sender == self.idToOwner[_token_id]
+        assert msg.sender == self.id_to_owner[_token_id]
         assert msg.sender == _receiver
         assert Settler(settler).synth() == _synth
 
@@ -413,8 +408,8 @@ def swap_into_synth(
     token_id: uint256 = convert(settler, uint256)
     self.is_settled[token_id] = False
     if _token_id == 0:
-        self.idToOwner[token_id] = _receiver
-        self.ownerToNFTokenCount[_receiver] += 1
+        self.id_to_owner[token_id] = _receiver
+        self.owner_to_token_count[_receiver] += 1
         log Transfer(ZERO_ADDRESS, _receiver, token_id)
 
     return token_id
@@ -428,7 +423,7 @@ def swap_from_synth(
     _expected: uint256,
     _receiver: address = msg.sender,
 ) -> uint256:
-    assert msg.sender == self.idToOwner[_token_id]
+    assert msg.sender == self.id_to_owner[_token_id]
 
     settler: address = convert(_token_id, address)
     synth: address = self.swappable_synth[_target]
@@ -442,9 +437,9 @@ def swap_from_synth(
     remaining_balance: uint256 = Settler(settler).exchange_via_curve(_target, pool, _amount, _expected, _receiver)
 
     if remaining_balance == 0:
-        self.idToOwner[_token_id] = ZERO_ADDRESS
-        self.idToApprovals[_token_id] = ZERO_ADDRESS
-        self.ownerToNFTokenCount[msg.sender] -= 1
+        self.id_to_owner[_token_id] = ZERO_ADDRESS
+        self.id_to_approval[_token_id] = ZERO_ADDRESS
+        self.owner_to_token_count[msg.sender] -= 1
         count: uint256 = self.settler_count
         self.settler_proxies[count] = settler
         self.settler_count = count + 1
@@ -455,7 +450,7 @@ def swap_from_synth(
 
 @external
 def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.sender) -> uint256:
-    assert msg.sender == self.idToOwner[_token_id]
+    assert msg.sender == self.id_to_owner[_token_id]
 
     settler: address = convert(_token_id, address)
 
@@ -468,9 +463,9 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
     remaining_balance: uint256 = Settler(settler).withdraw(_receiver, _amount)
 
     if remaining_balance == 0:
-        self.idToOwner[_token_id] = ZERO_ADDRESS
-        self.idToApprovals[_token_id] = ZERO_ADDRESS
-        self.ownerToNFTokenCount[msg.sender] -= 1
+        self.id_to_owner[_token_id] = ZERO_ADDRESS
+        self.id_to_approval[_token_id] = ZERO_ADDRESS
+        self.owner_to_token_count[msg.sender] -= 1
         count: uint256 = self.settler_count
         self.settler_proxies[count] = settler
         self.settler_count = count + 1
@@ -482,7 +477,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
 @external
 def settle(_token_id: uint256) -> bool:
     if not self.is_settled[_token_id]:
-        assert self.idToOwner[_token_id] != ZERO_ADDRESS, "Unknown Token ID"
+        assert self.id_to_owner[_token_id] != ZERO_ADDRESS, "Unknown Token ID"
 
         settler: address = convert(_token_id, address)
         synth: address = Settler(settler).synth()
@@ -519,7 +514,7 @@ def add_synth(_synth: address, _pool: address):
 @external
 def token_info(_token_id: uint256) -> TokenInfo:
     info: TokenInfo = empty(TokenInfo)
-    info.owner = self.idToOwner[_token_id]
+    info.owner = self.id_to_owner[_token_id]
     assert info.owner != ZERO_ADDRESS
 
     settler: address = convert(_token_id, address)
