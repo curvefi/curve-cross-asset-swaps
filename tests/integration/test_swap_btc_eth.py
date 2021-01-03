@@ -15,7 +15,7 @@ def test_btc_to_eth(Settler, alice, bob, swap, sBTC, sETH, curve_sbtc, curve_set
     alice.transfer(bob, alice.balance())
 
     tx = swap.swap_into_synth(initial, sETH, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     chain.mine(timedelta=200)
     amount = swap.token_info(token_id)['underlying_balance']
@@ -39,7 +39,7 @@ def test_eth_to_btc(Settler, alice, swap, sBTC, sETH, curve_sbtc, curve_seth, bt
     final = MintableForkToken(curve_sbtc.coins(btc_idx))
 
     tx = swap.swap_into_synth(ETH_ADDRESS, sBTC, alice.balance(), 0, {'from': alice, 'value': alice.balance()})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     chain.mine(timedelta=200)
     amount = swap.token_info(token_id)['underlying_balance']

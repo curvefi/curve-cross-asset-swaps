@@ -9,7 +9,7 @@ def test_cannot_swap_from_immediately(alice, swap, settler_sbtc, WBTC):
 
 def test_only_owner(chain, bob, swap, settler_sbtc, WBTC):
     chain.sleep(300)
-    with brownie.reverts():
+    with brownie.reverts("Caller is not owner or operator"):
         swap.swap_from_synth(settler_sbtc.token_id(), WBTC, 1, 0, {'from': bob})
 
 
@@ -76,15 +76,15 @@ def test_swap_multiple(chain, alice, swap, settler_susd, sUSD, DAI, USDT):
     initial = swap.token_info(token_id)['underlying_balance']
     amount = initial // 4
 
-    expected_1 = swap.get_swap_from_synth_amount(sUSD, DAI, amount)
+    expected_1 = swap.get_swap_from_synth_amount(sUSD, DAI, amount)-1
     swap.swap_from_synth(token_id, DAI, amount, expected_1, {'from': alice})
 
-    expected_2 = swap.get_swap_from_synth_amount(sUSD, USDT, amount * 2)
+    expected_2 = swap.get_swap_from_synth_amount(sUSD, USDT, amount * 2)-1
     swap.swap_from_synth(token_id, USDT, amount * 2, expected_2, {'from': alice})
 
     assert sUSD.balanceOf(settler_susd) == initial - amount * 3
-    assert DAI.balanceOf(alice) == expected_1
-    assert USDT.balanceOf(alice) == expected_2
+    assert abs(DAI.balanceOf(alice) - expected_1) <= 1
+    assert abs(USDT.balanceOf(alice) - expected_2) <= 1
 
 
 def test_different_receiver(chain, alice, bob, swap, settler_sbtc, sBTC, WBTC):

@@ -16,7 +16,7 @@ def test_usd_to_btc(Settler, alice, swap, sUSD, sBTC, curve_susd, curve_sbtc, us
     initial.approve(swap, 2**256-1, {'from': alice})
 
     tx = swap.swap_into_synth(initial, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     chain.mine(timedelta=200)
     amount = swap.token_info(token_id)['underlying_balance']
@@ -46,7 +46,7 @@ def test_btc_to_usd(Settler, alice, swap, sUSD, sBTC, curve_susd, curve_sbtc, us
     initial.approve(swap, 2**256-1, {'from': alice})
 
     tx = swap.swap_into_synth(initial, sUSD, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     chain.mine(timedelta=200)
     amount = swap.token_info(token_id)['underlying_balance']

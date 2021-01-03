@@ -15,7 +15,7 @@ def setup(alice, swap, DAI, USDT, add_synths):
 def test_swap_into_deploys_settler(swap, alice, DAI, sUSD, sBTC):
     amount = 1_000_000 * 10 ** 18
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     # this will fail if no bytecode exists at `token_id`
     settler = Settler.at(hex(token_id))
@@ -25,8 +25,7 @@ def test_swap_into_deploys_settler(swap, alice, DAI, sUSD, sBTC):
 def test_swap_into_mints(swap, alice, DAI, sBTC):
     amount = 1_000_000 * 10 ** 18
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
-    settler = Settler.at(hex(token_id))
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     assert swap.balanceOf(alice) == 1
     assert tx.events['Transfer'][-1].values() == [ZERO_ADDRESS, alice, token_id]
@@ -37,7 +36,7 @@ def test_swap_into_dai(swap, alice, DAI, sUSD, sBTC):
     amount = 1_000_000 * 10 ** 18
     expected = swap.get_swap_into_synth_amount(DAI, sBTC, amount)
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     settler = Settler.at(hex(token_id))
     assert DAI.balanceOf(alice) == 0
@@ -58,7 +57,7 @@ def test_swap_into_usdt(swap, alice, USDT, sUSD, sBTC):
     amount = 1_000_000 * 10 ** 6
     expected = swap.get_swap_into_synth_amount(USDT, sBTC, amount)
     tx = swap.swap_into_synth(USDT, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     settler = Settler.at(hex(token_id))
     assert USDT.balanceOf(alice) == 0
@@ -78,7 +77,7 @@ def test_swap_into_eth(swap, alice, sETH, sBTC):
     amount = 50 * 10 ** 18
     expected = swap.get_swap_into_synth_amount(ETH_ADDRESS, sBTC, amount)
     tx = swap.swap_into_synth(ETH_ADDRESS, sBTC, amount, 0, {'from': alice, 'value': amount})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     settler = Settler.at(hex(token_id))
 
@@ -94,8 +93,7 @@ def test_swap_into_eth(swap, alice, sETH, sBTC):
 def test_different_receiver(swap, alice, bob, DAI, sBTC):
     amount = 1_000_000 * 10 ** 18
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, bob, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
-    settler = Settler.at(hex(token_id))
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     assert swap.balanceOf(alice) == 0
     assert swap.balanceOf(bob) == 1
@@ -119,11 +117,11 @@ def test_slippage(swap, alice, DAI, sBTC):
 def test_swap_into_multiple_different_synths(swap, alice, DAI, USDT, sETH, sBTC):
     amount = 1_000_000 * 10 ** 18
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id1 = tx.events['Transfer'][-1]['tokenId']
+    token_id1 = tx.events['Transfer'][-1]['token_id']
 
     amount = 1_000_000 * 10 ** 6
     tx = swap.swap_into_synth(USDT, sETH, amount, 0, {'from': alice})
-    token_id2 = tx.events['Transfer'][-1]['tokenId']
+    token_id2 = tx.events['Transfer'][-1]['token_id']
 
     assert token_id1 != token_id2
     assert swap.balanceOf(alice) == 2
@@ -136,10 +134,10 @@ def test_swap_into_multiple_different_synths(swap, alice, DAI, USDT, sETH, sBTC)
 def test_swap_into_multiple_same_synth(swap, alice, DAI, sBTC):
     amount = (1_000_000 * 10 ** 18) // 4
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id1 = tx.events['Transfer'][-1]['tokenId']
+    token_id1 = tx.events['Transfer'][-1]['token_id']
 
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id2 = tx.events['Transfer'][-1]['tokenId']
+    token_id2 = tx.events['Transfer'][-1]['token_id']
 
     assert token_id1 != token_id2
     assert swap.balanceOf(alice) == 2

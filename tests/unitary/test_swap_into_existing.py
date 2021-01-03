@@ -31,10 +31,7 @@ def test_swap_into_existing_increases_balance(swap, alice, DAI, sUSD, sBTC, sett
 
 
 def test_swap_into_existing_does_not_mint(swap, alice, DAI, sBTC, settler_sbtc):
-    initial = sBTC.balanceOf(settler_sbtc)
-
     amount = 1_000_000 * 10 ** 18
-    expected = swap.get_swap_into_synth_amount(DAI, sBTC, amount)
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, alice, settler_sbtc.token_id(), {'from': alice})
     token_id = tx.return_value
 
@@ -46,21 +43,21 @@ def test_swap_into_existing_does_not_mint(swap, alice, DAI, sBTC, settler_sbtc):
 def test_only_owner(swap, alice, bob, DAI, sBTC, settler_sbtc):
     amount = 1_000_000 * 10 ** 18
 
-    with brownie.reverts():
+    with brownie.reverts("Caller is not owner or operator"):
         swap.swap_into_synth(DAI, sBTC, amount, 0, bob, settler_sbtc.token_id(), {'from': bob})
 
 
 def test_wrong_receiver(swap, alice, bob, DAI, sBTC, settler_sbtc):
     amount = 1_000_000 * 10 ** 18
 
-    with brownie.reverts():
+    with brownie.reverts("Receiver is not owner"):
         swap.swap_into_synth(DAI, sBTC, amount, 0, bob, settler_sbtc.token_id(), {'from': alice})
 
 
 def test_wrong_synth(swap, alice, DAI, sETH, settler_sbtc):
     amount = 1_000_000 * 10 ** 18
 
-    with brownie.reverts():
+    with brownie.reverts("Incorrect synth for Token ID"):
         swap.swap_into_synth(DAI, sETH, amount, 0, alice, settler_sbtc.token_id(), {'from': alice})
 
 
@@ -71,5 +68,5 @@ def test_cannot_add_after_burn(chain, swap, alice, settler_sbtc, DAI, sBTC):
 
     swap.withdraw(token_id, balance, {'from': alice})
 
-    with brownie.reverts():
+    with brownie.reverts("Unknown Token ID"):
         swap.swap_into_synth(DAI, sBTC, 10**18, 0, alice, token_id, {'from': alice})

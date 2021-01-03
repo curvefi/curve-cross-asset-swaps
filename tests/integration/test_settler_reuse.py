@@ -15,7 +15,7 @@ def token_ids(chain, alice, bob, swap, DAI, USDT, sBTC, add_synths):
     amount = (1_000_000 * 10 ** 18) // 4
     for i in range(4):
         tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-        token_ids.append(tx.events['Transfer'][-1]['tokenId'])
+        token_ids.append(tx.events['Transfer'][-1]['token_id'])
 
     chain.sleep(300)
 
@@ -34,7 +34,7 @@ def test_reuse_token_id(Settler, swap, alice, bob, USDT, sBTC, sETH, token_ids, 
         assert swap.is_settled(token_ids[i])
 
         tx = swap.swap_into_synth(USDT, sETH, 1000 * 10 ** 6, 0, {'from': bob})
-        token_id = tx.events['Transfer'][-1]['tokenId']
+        token_id = tx.events['Transfer'][-1]['token_id']
         assert token_id == token_ids[i]
         assert not swap.is_settled(token_id)
         assert swap.ownerOf(token_id) == bob

@@ -42,7 +42,7 @@ def settler_sbtc(Settler, alice, swap, DAI, sBTC, add_synths):
     DAI.approve(swap, 2**256-1, {'from': alice})
 
     tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     yield Settler.at(hex(token_id))
 
@@ -55,7 +55,7 @@ def settler_seth(Settler, alice, swap, DAI, sETH, add_synths):
     DAI.approve(swap, 2**256-1, {'from': alice})
 
     tx = swap.swap_into_synth(DAI, sETH, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     yield Settler.at(hex(token_id))
 
@@ -68,7 +68,7 @@ def settler_susd(Settler, alice, swap, WBTC, sUSD, add_synths):
     WBTC.approve(swap, 2**256-1, {'from': alice})
 
     tx = swap.swap_into_synth(WBTC, sUSD, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['tokenId']
+    token_id = tx.events['Transfer'][-1]['token_id']
 
     yield Settler.at(hex(token_id))
 

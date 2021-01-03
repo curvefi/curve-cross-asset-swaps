@@ -9,7 +9,7 @@ def test_cannot_withdraw_immediately(alice, swap, settler_sbtc):
 
 def test_only_owner(chain, bob, swap, settler_sbtc):
     chain.sleep(300)
-    with brownie.reverts():
+    with brownie.reverts("Caller is not owner or operator"):
         swap.withdraw(settler_sbtc.token_id(), 1, {'from': bob})
 
 
