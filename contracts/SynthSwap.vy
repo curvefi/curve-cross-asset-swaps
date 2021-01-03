@@ -196,14 +196,14 @@ def isApprovedForAll(_owner: address, _operator: address) -> bool:
 
 @internal
 def _transfer(_from: address, _to: address, _token_id: uint256, _caller: address):
-    assert _from != ZERO_ADDRESS
-    assert _to != ZERO_ADDRESS
+    assert _from != ZERO_ADDRESS, "Cannot send from zero address"
+    assert _to != ZERO_ADDRESS, "Cannot send to zero address"
     owner: address = self.id_to_owner[_token_id]
-    assert owner == _from
+    assert owner == _from, "Incorrect owner for Token ID"
 
     approved_for: address = self.id_to_approval[_token_id]
     if _caller != _from:
-        assert approved_for == _caller or self.owner_to_operators[owner][_caller]
+        assert approved_for == _caller or self.owner_to_operators[owner][_caller], "Caller is not owner or operator"
 
     if approved_for != ZERO_ADDRESS:
         self.id_to_approval[_token_id] = ZERO_ADDRESS
@@ -265,8 +265,8 @@ def approve(_approved: address, _token_id: uint256):
     owner: address = self.id_to_owner[_token_id]
 
     if msg.sender != self.id_to_owner[_token_id]:
-        assert owner != ZERO_ADDRESS
-        assert self.owner_to_operators[owner][msg.sender]
+        assert owner != ZERO_ADDRESS, "Unknown Token ID"
+        assert self.owner_to_operators[owner][msg.sender], "Caller is not owner or operator"
 
     self.id_to_approval[_token_id] = _approved
     log Approval(owner, _approved, _token_id)
