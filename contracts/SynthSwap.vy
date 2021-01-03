@@ -380,9 +380,15 @@ def swap_into_synth(
             settler = self.settler_proxies[count]
             self.settler_count = count
     else:
-        assert msg.sender == self.id_to_owner[_token_id]
-        assert msg.sender == _receiver
-        assert Settler(settler).synth() == _synth
+        owner: address = self.id_to_owner[_token_id]
+        if msg.sender != owner:
+            assert owner != ZERO_ADDRESS, "Unknown Token ID"
+            assert (
+                self.owner_to_operators[owner][msg.sender] or
+                msg.sender == self.id_to_approval[_token_id]
+            ), "Caller is not owner or operator"
+        assert owner == _receiver, "Receiver is not owner"
+        assert Settler(settler).synth() == _synth, "Incorrect synth for Token ID"
 
     registry_swap: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
     if _from != 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
@@ -454,7 +460,7 @@ def swap_from_synth(
 ) -> uint256:
     """
     @notice Swap the synth represented by an NFT into another asset.
-    @dev Only callable by the owner of `_token_id` after the synth settlement
+    @dev Callable by the owner or operator of `_token_id` after the synth settlement
          period has passed. If `_amount` is equal to the entire balance within
          the NFT, the NFT is burned.
     @param _token_id The identifier for an NFT
@@ -465,7 +471,13 @@ def swap_from_synth(
                      if not given defaults to `msg.sender`
     @return uint256 Synth balance remaining in `_token_id`
     """
-    assert msg.sender == self.id_to_owner[_token_id]
+    owner: address = self.id_to_owner[_token_id]
+    if msg.sender != self.id_to_owner[_token_id]:
+        assert owner != ZERO_ADDRESS, "Unknown Token ID"
+        assert (
+            self.owner_to_operators[owner][msg.sender] or
+            msg.sender == self.id_to_approval[_token_id]
+        ), "Caller is not owner or operator"
 
     settler: address = convert(_token_id, address)
     synth: address = self.swappable_synth[_to]
@@ -494,7 +506,7 @@ def swap_from_synth(
 def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.sender) -> uint256:
     """
     @notice Withdraw the synth represented by an NFT.
-    @dev Only callable by the owner of `_token_id` after the synth settlement
+    @dev Callable by the owner or operator of `_token_id` after the synth settlement
          period has passed. If `_amount` is equal to the entire balance within
          the NFT, the NFT is burned.
     @param _token_id The identifier for an NFT
@@ -503,7 +515,13 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
                      if not given defaults to `msg.sender`
     @return uint256 Synth balance remaining in `_token_id`
     """
-    assert msg.sender == self.id_to_owner[_token_id]
+    owner: address = self.id_to_owner[_token_id]
+    if msg.sender != self.id_to_owner[_token_id]:
+        assert owner != ZERO_ADDRESS, "Unknown Token ID"
+        assert (
+            self.owner_to_operators[owner][msg.sender] or
+            msg.sender == self.id_to_approval[_token_id]
+        ), "Caller is not owner or operator"
 
     settler: address = convert(_token_id, address)
 
