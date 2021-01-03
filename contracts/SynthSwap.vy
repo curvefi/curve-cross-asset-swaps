@@ -126,6 +126,12 @@ def __init__(_settler_implementation: address):
     """
     self.settler_implementation = _settler_implementation
 
+    for i in range(10):
+        settler: address = create_forwarder_to(_settler_implementation)
+        Settler(settler).initialize()
+        self.settler_proxies[i] = settler
+    self.settler_count = 10
+
 
 @view
 @external
