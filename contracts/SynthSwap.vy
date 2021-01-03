@@ -287,6 +287,16 @@ def setApprovalForAll(_operator: address, _approved: bool):
 @view
 @external
 def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256) -> uint256:
+    """
+    @notice Estimate the amount received when performing a cross-asset swap
+    @dev Used to calculate `_expected` when calling `swap_into_synth`. Be sure to
+         reduce the value slightly to account for market movement prior to the
+         transaction confirmation.
+    @param _from Address of the initial asset being exchanged
+    @param _synth Address of the synth being swapped into
+    @param _amount Amount of `_from` to swap
+    @return uint256 Expected amount of `_synth` received
+    """
     registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
 
     intermediate_synth: address = self.swappable_synth[_from]
@@ -309,6 +319,16 @@ def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256
 @view
 @external
 def get_swap_from_synth_amount(_synth: address, _to: address, _amount: uint256) -> uint256:
+    """
+    @notice Estimate the amount received when swapping out of a settled synth.
+    @dev Used to calculate `_expected` when calling `swap_from_synth`. Be sure to
+         reduce the value slightly to account for market movement prior to the
+         transaction confirmation.
+    @param _synth Address of the synth being swapped out of
+    @param _to Address of the asset to swap into
+    @param _amount Amount of `_synth` being exchanged
+    @return uint256 Expected amount of `_to` received
+    """
     registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
     pool: address = self.synth_pools[_synth]
 
@@ -330,7 +350,25 @@ def swap_into_synth(
     _receiver: address = msg.sender,
     _token_id: uint256 = 0,
 ) -> uint256:
-
+    """
+    @notice Perform a cross-asset swap between `_from` and `_synth`
+    @dev Synth swaps require a settlement time to complete and so the newly
+         generated synth cannot immediately be transferred onward. Calling
+         this function mints an NFT which represents ownership of the generated
+         synth. Once the settlement time has passed, the owner may claim the
+         synth by calling to `swap_from_synth` or `withdraw`.
+    @param _from Address of the initial asset being exchanged
+    @param _synth Address of the synth being swapped into
+    @param _amount Amount of `_from` to swap
+    @param _expected Minimum amount of `_synth` to receive
+    @param _receiver Address of the recipient of `_synth`, if not given
+                       defaults to `msg.sender`
+    @param _token_id Token ID to deposit `_synth` into. If left as 0, a new NFT
+                       is minted for the generated synth. If non-zero, the token ID
+                       must be owned by `msg.sender` and must represent the same
+                       synth as is being swapped into.
+    @return uint256 NFT token ID
+    """
     settler: address = convert(_token_id, address)
     if settler == ZERO_ADDRESS:
         count: uint256 = self.settler_count
@@ -409,15 +447,28 @@ def swap_into_synth(
 @external
 def swap_from_synth(
     _token_id: uint256,
-    _target: address,
+    _to: address,
     _amount: uint256,
     _expected: uint256,
     _receiver: address = msg.sender,
 ) -> uint256:
+    """
+    @notice Swap the synth represented by an NFT into another asset.
+    @dev Only callable by the owner of `_token_id` after the synth settlement
+         period has passed. If `_amount` is equal to the entire balance within
+         the NFT, the NFT is burned.
+    @param _token_id The identifier for an NFT
+    @param _to Address of the asset to swap into
+    @param _amount Amount of the synth to swap
+    @param _expected Minimum amount of `_to` to receive
+    @param _receiver Address of the recipient of the synth,
+                     if not given defaults to `msg.sender`
+    @return uint256 Synth balance remaining in `_token_id`
+    """
     assert msg.sender == self.id_to_owner[_token_id]
 
     settler: address = convert(_token_id, address)
-    synth: address = self.swappable_synth[_target]
+    synth: address = self.swappable_synth[_to]
     pool: address = self.synth_pools[synth]
 
     if not self.is_settled[_token_id]:
@@ -425,9 +476,9 @@ def swap_from_synth(
         Exchanger(EXCHANGER).settle(settler, currency_key)
         self.is_settled[_token_id] = True
 
-    remaining_balance: uint256 = Settler(settler).exchange_via_curve(_target, pool, _amount, _expected, _receiver)
+    remaining: uint256 = Settler(settler).exchange_via_curve(_to, pool, _amount, _expected, _receiver)
 
-    if remaining_balance == 0:
+    if remaining == 0:
         self.id_to_owner[_token_id] = ZERO_ADDRESS
         self.id_to_approval[_token_id] = ZERO_ADDRESS
         self.owner_to_token_count[msg.sender] -= 1
@@ -436,11 +487,22 @@ def swap_from_synth(
         self.settler_count = count + 1
         log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
 
-    return remaining_balance
+    return remaining
 
 
 @external
 def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.sender) -> uint256:
+    """
+    @notice Withdraw the synth represented by an NFT.
+    @dev Only callable by the owner of `_token_id` after the synth settlement
+         period has passed. If `_amount` is equal to the entire balance within
+         the NFT, the NFT is burned.
+    @param _token_id The identifier for an NFT
+    @param _amount Amount of the synth to withdraw
+    @param _receiver Address of the recipient of the synth,
+                     if not given defaults to `msg.sender`
+    @return uint256 Synth balance remaining in `_token_id`
+    """
     assert msg.sender == self.id_to_owner[_token_id]
 
     settler: address = convert(_token_id, address)
@@ -467,6 +529,13 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
 
 @external
 def settle(_token_id: uint256) -> bool:
+    """
+    @notice Settle the synth represented in an NFT.
+    @dev Settlement is performed when swapping or withdrawing, there
+         is no requirement to call this function separately.
+    @param _token_id The identifier for an NFT
+    @return bool Success
+    """
     if not self.is_settled[_token_id]:
         assert self.id_to_owner[_token_id] != ZERO_ADDRESS, "Unknown Token ID"
 
@@ -481,6 +550,14 @@ def settle(_token_id: uint256) -> bool:
 
 @external
 def add_synth(_synth: address, _pool: address):
+    """
+    @notice Add a new swappable synth
+    @dev Callable by anyone, however `_pool` must exist within the Curve
+         pool registry and `_synth` must be a valid synth that is swappable
+         within the pool
+    @param _synth Address of the synth to add
+    @param _pool Address of the Curve pool where `_synth` is swappable
+    """
     assert self.synth_pools[_synth] == ZERO_ADDRESS  # dev: already added
 
     # this will revert if `_synth` is not actually a synth
@@ -504,6 +581,14 @@ def add_synth(_synth: address, _pool: address):
 @view
 @external
 def token_info(_token_id: uint256) -> TokenInfo:
+    """
+    @notice Get information about the synth represented by an NFT
+    @param _token_id NFT token ID to query info about
+    @return NFT owner
+            Address of synth within the NFT
+            Balance of the synth
+            Max settlement time in seconds
+    """
     info: TokenInfo = empty(TokenInfo)
     info.owner = self.id_to_owner[_token_id]
     assert info.owner != ZERO_ADDRESS
@@ -511,6 +596,9 @@ def token_info(_token_id: uint256) -> TokenInfo:
     settler: address = convert(_token_id, address)
     info.synth = Settler(settler).synth()
     info.underlying_balance = ERC20(info.synth).balanceOf(settler)
-    info.time_to_settle = Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(settler, self.currency_keys[info.synth])
+    info.time_to_settle = Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(
+        settler,
+        self.currency_keys[info.synth]
+    )
 
     return info
