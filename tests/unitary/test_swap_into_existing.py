@@ -3,11 +3,11 @@ import pytest
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup(alice, swap, DAI, USDT, add_synths):
+def setup(alice, bob, swap, DAI, USDT, add_synths):
     DAI._mint_for_testing(alice, 1_000_000 * 10 ** 18)
     DAI.approve(swap, 2**256-1, {'from': alice})
-    USDT._mint_for_testing(alice, 1_000_000 * 10 ** 6)
-    USDT.approve(swap, 2**256-1, {'from': alice})
+    USDT._mint_for_testing(bob, 1_000_000 * 10 ** 6)
+    USDT.approve(swap, 2**256-1, {'from': bob})
 
 
 def test_swap_into_existing_increases_balance(swap, alice, DAI, sUSD, sBTC, settler_sbtc):
@@ -15,7 +15,7 @@ def test_swap_into_existing_increases_balance(swap, alice, DAI, sUSD, sBTC, sett
 
     amount = 1_000_000 * 10 ** 18
     expected = swap.get_swap_into_synth_amount(DAI, sBTC, amount)
-    tx = swap.swap_into_synth(DAI, sBTC, amount, 0, alice, settler_sbtc.token_id(), {'from': alice})
+    swap.swap_into_synth(DAI, sBTC, amount, 0, alice, settler_sbtc.token_id(), {'from': alice})
 
     assert DAI.balanceOf(alice) == 0
     assert DAI.balanceOf(swap) == 0
@@ -70,3 +70,18 @@ def test_cannot_add_after_burn(chain, swap, alice, settler_sbtc, DAI, sBTC):
 
     with brownie.reverts("Unknown Token ID"):
         swap.swap_into_synth(DAI, sBTC, 10**18, 0, alice, token_id, {'from': alice})
+
+
+def test_approved_operator(swap, alice, bob, USDT, sBTC, settler_sbtc):
+    amount = 1_000_000 * 10 ** 6
+
+    swap.setApprovalForAll(bob, True, {'from': alice})
+    swap.swap_into_synth(USDT, sBTC, amount, 0, alice, settler_sbtc.token_id(), {'from': bob})
+
+
+def test_approved_one_token_operator(swap, alice, bob, USDT, sBTC, settler_sbtc):
+    amount = 1_000_000 * 10 ** 6
+    token_id = settler_sbtc.token_id()
+
+    swap.approve(bob, token_id, {'from': alice})
+    swap.swap_into_synth(USDT, sBTC, amount, 0, alice, token_id, {'from': bob})

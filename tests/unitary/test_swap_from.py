@@ -1,5 +1,5 @@
 import brownie
-from brownie import ZERO_ADDRESS
+from brownie import ZERO_ADDRESS, chain
 
 
 def test_cannot_swap_from_immediately(alice, swap, settler_sbtc, WBTC):
@@ -7,13 +7,13 @@ def test_cannot_swap_from_immediately(alice, swap, settler_sbtc, WBTC):
         swap.swap_from_synth(settler_sbtc.token_id(), WBTC, 1, 0, {'from': alice})
 
 
-def test_only_owner(chain, bob, swap, settler_sbtc, WBTC):
+def test_only_owner(bob, swap, settler_sbtc, WBTC):
     chain.sleep(300)
     with brownie.reverts("Caller is not owner or operator"):
         swap.swap_from_synth(settler_sbtc.token_id(), WBTC, 1, 0, {'from': bob})
 
 
-def test_swap_all(chain, alice, swap, settler_sbtc, sBTC, WBTC):
+def test_swap_all(alice, swap, settler_sbtc, sBTC, WBTC):
     chain.mine(timedelta=300)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
@@ -26,7 +26,7 @@ def test_swap_all(chain, alice, swap, settler_sbtc, sBTC, WBTC):
     assert WBTC.balanceOf(swap) == 0
 
 
-def test_swap_all_burns(chain, alice, swap, settler_sbtc, WBTC):
+def test_swap_all_burns(alice, swap, settler_sbtc, WBTC):
     chain.mine(timedelta=300)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
@@ -40,7 +40,7 @@ def test_swap_all_burns(chain, alice, swap, settler_sbtc, WBTC):
         swap.ownerOf(token_id)
 
 
-def test_swap_partial(chain, alice, swap, settler_sbtc, sBTC, WBTC):
+def test_swap_partial(alice, swap, settler_sbtc, sBTC, WBTC):
     chain.mine(timedelta=300)
     token_id = settler_sbtc.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
@@ -58,7 +58,7 @@ def test_swap_partial(chain, alice, swap, settler_sbtc, sBTC, WBTC):
     assert WBTC.balanceOf(swap) == 0
 
 
-def test_swap_partial_does_not_burn(chain, alice, swap, settler_sbtc, WBTC):
+def test_swap_partial_does_not_burn(alice, swap, settler_sbtc, WBTC):
     chain.mine(timedelta=300)
     token_id = settler_sbtc.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
@@ -70,7 +70,7 @@ def test_swap_partial_does_not_burn(chain, alice, swap, settler_sbtc, WBTC):
     assert swap.ownerOf(token_id) == alice
 
 
-def test_swap_multiple(chain, alice, swap, settler_susd, sUSD, DAI, USDT):
+def test_swap_multiple(alice, swap, settler_susd, sUSD, DAI, USDT):
     chain.mine(timedelta=300)
     token_id = settler_susd.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
@@ -87,7 +87,7 @@ def test_swap_multiple(chain, alice, swap, settler_susd, sUSD, DAI, USDT):
     assert abs(USDT.balanceOf(alice) - expected_2) <= 1
 
 
-def test_different_receiver(chain, alice, bob, swap, settler_sbtc, sBTC, WBTC):
+def test_different_receiver(alice, bob, swap, settler_sbtc, sBTC, WBTC):
     chain.mine(timedelta=300)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
@@ -101,10 +101,23 @@ def test_different_receiver(chain, alice, bob, swap, settler_sbtc, sBTC, WBTC):
     assert WBTC.balanceOf(swap) == 0
 
 
-def test_exceeds_balance(chain, alice, bob, swap, settler_sbtc, sBTC, WBTC):
+def test_exceeds_balance(alice, bob, swap, settler_sbtc, sBTC, WBTC):
     chain.mine(timedelta=300)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
 
     with brownie.reverts():
-        swap.swap_from_synth(settler_sbtc.token_id(), WBTC, balance+1, 0, {'from': alice})
+        swap.swap_from_synth(token_id, WBTC, balance+1, 0, {'from': alice})
+
+
+def test_approved_operator(swap, alice, bob, WBTC, settler_sbtc):
+    swap.setApprovalForAll(bob, True, {'from': alice})
+    chain.sleep(300)
+    swap.swap_from_synth(settler_sbtc.token_id(), WBTC, 1, 0, {'from': bob})
+
+
+def test_approved_one_token_operator(swap, alice, bob, WBTC, settler_sbtc):
+    token_id = settler_sbtc.token_id()
+    swap.approve(bob, token_id, {'from': alice})
+    chain.sleep(300)
+    swap.swap_from_synth(token_id, WBTC, 1, 0, {'from': bob})
