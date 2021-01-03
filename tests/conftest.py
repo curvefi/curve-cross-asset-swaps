@@ -21,6 +21,11 @@ def bob(accounts):
     yield accounts[1]
 
 
+@pytest.fixture(scope="session")
+def charlie(accounts):
+    yield accounts[2]
+
+
 # deployments
 
 @pytest.fixture(scope="module")
