@@ -117,10 +117,12 @@ is_approved: HashMap[address, HashMap[address, bool]]
 # synth -> currency key
 currency_keys: HashMap[address, bytes32]
 
+
 @external
 def __init__(_settler_implementation: address):
     """
-    @dev Contract constructor.
+    @notice Contract constructor
+    @param _settler_implementation `Settler` implementation deployment
     """
     self.settler_implementation = _settler_implementation
 
@@ -129,8 +131,9 @@ def __init__(_settler_implementation: address):
 @external
 def supportsInterface(_interface_id: bytes32) -> bool:
     """
-    @dev Interface identification is specified in ERC-165.
+    @dev Interface identification is specified in ERC-165
     @param _interface_id Id of the interface
+    @return bool Is interface supported?
     """
     return _interface_id in [
         0x0000000000000000000000000000000000000000000000000000000001ffc9a7,  # ERC165
@@ -142,9 +145,11 @@ def supportsInterface(_interface_id: bytes32) -> bool:
 @external
 def balanceOf(_owner: address) -> uint256:
     """
-    @dev Returns the number of NFTs owned by `_owner`.
-         Throws if `_owner` is the zero address. NFTs assigned to the zero address are considered invalid.
-    @param _owner Address for whom to query the balance.
+    @notice Return the number of NFTs owned by `_owner`
+    @dev Reverts if `_owner` is the zero address. NFTs assigned
+         to the zero address are considered invalid
+    @param _owner Address for whom to query the balance
+    @return uint256 Number of NFTs owned by `_owner`
     """
     assert _owner != ZERO_ADDRESS
     return self.owner_to_token_count[_owner]
@@ -154,12 +159,12 @@ def balanceOf(_owner: address) -> uint256:
 @external
 def ownerOf(_token_id: uint256) -> address:
     """
-    @dev Returns the address of the owner of the NFT.
-         Throws if `_token_id` is not a valid NFT.
-    @param _token_id The identifier for an NFT.
+    @notice Return the address of the owner of the NFT
+    @dev Reverts if `_token_id` is not a valid NFT
+    @param _token_id The identifier for an NFT
+    @return address NFT owner
     """
     owner: address = self.id_to_owner[_token_id]
-    # Throws if `_token_id` is not a valid NFT
     assert owner != ZERO_ADDRESS
     return owner
 
@@ -168,11 +173,11 @@ def ownerOf(_token_id: uint256) -> address:
 @external
 def getApproved(_token_id: uint256) -> address:
     """
-    @dev Get the approved address for a single NFT.
-         Throws if `_token_id` is not a valid NFT.
-    @param _token_id ID of the NFT to query the approval of.
+    @notice Get the approved address for a single NFT
+    @dev Reverts if `_token_id` is not a valid NFT
+    @param _token_id ID of the NFT to query the approval of
+    @return address Address approved to transfer this NFT
     """
-    # Throws if `_token_id` is not a valid NFT
     assert self.id_to_owner[_token_id] != ZERO_ADDRESS
     return self.id_to_approval[_token_id]
 
@@ -181,11 +186,12 @@ def getApproved(_token_id: uint256) -> address:
 @external
 def isApprovedForAll(_owner: address, _operator: address) -> bool:
     """
-    @dev Checks if `_operator` is an approved operator for `_owner`.
-    @param _owner The address that owns the NFTs.
-    @param _operator The address that acts on behalf of the owner.
+    @notice Check if `_operator` is an approved operator for `_owner`
+    @param _owner The address that owns the NFTs
+    @param _operator The address that acts on behalf of the owner
+    @return bool Is operator approved?
     """
-    return (self.owner_to_operators[_owner])[_operator]
+    return self.owner_to_operators[_owner][_operator]
 
 
 @internal
@@ -212,67 +218,56 @@ def _transfer(_from: address, _to: address, _token_id: uint256, _caller: address
 @external
 def transferFrom(_from: address, _to: address, _token_id: uint256):
     """
-    @dev Throws unless `msg.sender` is the current owner, an authorized operator, or the approved
-         address for this NFT.
-         Throws if `_from` is not the current owner.
-         Throws if `_to` is the zero address.
-         Throws if `_token_id` is not a valid NFT.
-    @notice The caller is responsible to confirm that `_to` is capable of receiving NFTs or else
-            they maybe be permanently lost.
-    @param _from The current owner of the NFT.
-    @param _to The new owner.
-    @param _token_id The NFT to transfer.
+    @notice Transfer ownership of `_token_id` from `_from` to `_to`
+    @dev Reverts unless `msg.sender` is the current owner, an
+         authorized operator, or the approved address for `_token_id`
+         Reverts if `_to` is the zero address
+    @param _from The current owner of `_token_id`
+    @param _to Address to transfer the NFT to
+    @param _token_id ID of the NFT to transfer
     """
     self._transfer(_from, _to, _token_id, msg.sender)
 
 
 @external
 def safeTransferFrom(
-        _from: address,
-        _to: address,
-        _token_id: uint256,
-        _data: Bytes[1024]=b""
-    ):
+    _from: address,
+    _to: address,
+    _token_id: uint256,
+    _data: Bytes[1024]=b""
+):
     """
-    @dev Transfers the ownership of an NFT from one address to another address.
-         Throws unless `msg.sender` is the current owner, an authorized operator, or the
-         approved address for this NFT.
-         Throws if `_from` is not the current owner.
-         Throws if `_to` is the zero address.
-         Throws if `_token_id` is not a valid NFT.
-         If `_to` is a smart contract, it calls `onERC721Received` on `_to` and throws if
-         the return value is not `bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))`.
-         NOTE: bytes4 is represented by bytes32 with padding
-    @param _from The current owner of the NFT.
-    @param _to The new owner.
-    @param _token_id The NFT to transfer.
-    @param _data Additional data with no specified format, sent in call to `_to`.
+    @notice Transfer ownership of `_token_id` from `_from` to `_to`
+    @dev If `_to` is a smart contract, it must implement the `onERC721Received` function
+         and return the value `bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))`
+    @param _from The current owner of `_token_id`
+    @param _to Address to transfer the NFT to
+    @param _token_id ID of the NFT to transfer
+    @param _data Additional data with no specified format, sent in call to `_to`
     """
     self._transfer(_from, _to, _token_id, msg.sender)
-    if _to.is_contract: # check if `_to` is a contract address
+
+    if _to.is_contract:
         response: bytes32 = ERC721Receiver(_to).onERC721Received(msg.sender, _from, _token_id, _data)
-        # Throws if transfer destination is a contract which does not implement 'onERC721Received'
-        assert response == method_id("onERC721Received(address,address,uint256,bytes)", output_type=bytes32)
+        assert response == 0x150b7a0200000000000000000000000000000000000000000000000000000000
 
 
 @external
 def approve(_approved: address, _token_id: uint256):
     """
-    @dev Set or reaffirm the approved address for an NFT. The zero address indicates there is no approved address.
-         Throws unless `msg.sender` is the current NFT owner, or an authorized operator of the current owner.
-         Throws if `_token_id` is not a valid NFT. (NOTE: This is not written the EIP)
-         Throws if `_approved` is the current owner. (NOTE: This is not written the EIP)
-    @param _approved Address to be approved for the given NFT ID.
-    @param _token_id ID of the token to be approved.
+    @notice Set or reaffirm the approved address for an NFT.
+            The zero address indicates there is no approved address.
+    @dev Reverts unless `msg.sender` is the current NFT owner, or an authorized
+         operator of the current owner. Reverts if `_token_id` is not a valid NFT.
+    @param _approved Address to be approved for the given NFT ID
+    @param _token_id ID of the token to be approved
     """
     owner: address = self.id_to_owner[_token_id]
-    # Throws if `_token_id` is not a valid NFT
-    assert owner != ZERO_ADDRESS
-    # Throws if `_approved` is the current owner
-    assert _approved != owner
-    # Check requirements
-    assert msg.sender == self.id_to_owner[_token_id] or self.owner_to_operators[owner][msg.sender]
-    # Set the approval
+
+    if msg.sender != self.id_to_owner[_token_id]:
+        assert owner != ZERO_ADDRESS
+        assert self.owner_to_operators[owner][msg.sender]
+
     self.id_to_approval[_token_id] = _approved
     log Approval(owner, _approved, _token_id)
 
@@ -280,15 +275,11 @@ def approve(_approved: address, _token_id: uint256):
 @external
 def setApprovalForAll(_operator: address, _approved: bool):
     """
-    @dev Enables or disables approval for a third party ("operator") to manage all of
-         `msg.sender`'s assets. It also emits the ApprovalForAll event.
-         Throws if `_operator` is the `msg.sender`. (NOTE: This is not written the EIP)
-    @notice This works even if sender doesn't own any tokens at the time.
-    @param _operator Address to add to the set of authorized operators.
-    @param _approved True if the operators is approved, false to revoke approval.
+    @notice Enable or disable approval for a third party ("operator") to manage all
+         NFTs owned by `msg.sender`.
+    @param _operator Address to set operator authorization for.
+    @param _approved True if the operators is approved, False to revoke approval.
     """
-    # Throws if `_operator` is the `msg.sender`
-    assert _operator != msg.sender
     self.owner_to_operators[msg.sender][_operator] = _approved
     log ApprovalForAll(msg.sender, _operator, _approved)
 
