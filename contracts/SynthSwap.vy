@@ -1,4 +1,10 @@
 # @version 0.2.8
+"""
+@title Curve SynthSwap
+@author Curve.fi
+@license MIT
+@notice Allows cross-asset swaps via Curve and Synthetix
+"""
 
 from vyper.interfaces import ERC20
 from vyper.interfaces import ERC721
