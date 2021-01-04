@@ -88,6 +88,19 @@ event ApprovalForAll:
     operator: indexed(address)
     approved: bool
 
+event NewSettler:
+    addr: address
+
+event NewSynth:
+    synth: address
+    pool: address
+
+event TokenUpdate:
+    token_id: indexed(uint256)
+    owner: indexed(address)
+    synth: indexed(address)
+    underlying_balance: uint256
+
 
 struct TokenInfo:
     owner: address
@@ -136,6 +149,7 @@ def __init__(_settler_implementation: address):
         settler: address = create_forwarder_to(_settler_implementation)
         Settler(settler).initialize()
         self.settler_proxies[i] = settler
+        log NewSettler(settler)
     self.settler_count = 10
 
 
@@ -387,6 +401,7 @@ def swap_into_synth(
         if count == 0:
             settler = create_forwarder_to(self.settler_implementation)
             Settler(settler).initialize()
+            log NewSettler(settler)
         else:
             count -= 1
             settler = self.settler_proxies[count]
@@ -455,7 +470,8 @@ def swap_into_synth(
         self.currency_keys[intermediate_synth],
         self.currency_keys[_synth]
     )
-    assert ERC20(_synth).balanceOf(settler) - initial_balance >= _expected, "Rekt by slippage"
+    final_balance: uint256 = ERC20(_synth).balanceOf(settler)
+    assert final_balance - initial_balance >= _expected, "Rekt by slippage"
 
     token_id: uint256 = convert(settler, uint256)
     self.is_settled[token_id] = False
@@ -463,6 +479,8 @@ def swap_into_synth(
         self.id_to_owner[token_id] = _receiver
         self.owner_to_token_count[_receiver] += 1
         log Transfer(ZERO_ADDRESS, _receiver, token_id)
+
+    log TokenUpdate(token_id, _receiver, _synth, final_balance)
 
     return token_id
 
@@ -515,6 +533,10 @@ def swap_from_synth(
         self.settler_proxies[count] = settler
         self.settler_count = count + 1
         log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
+        owner = ZERO_ADDRESS
+        synth = ZERO_ADDRESS
+
+    log TokenUpdate(_token_id, owner, synth, remaining)
 
     return remaining
 
@@ -541,16 +563,16 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
         ), "Caller is not owner or operator"
 
     settler: address = convert(_token_id, address)
+    synth: address = Settler(settler).synth()
 
     if not self.is_settled[_token_id]:
-        synth: address = Settler(settler).synth()
         currency_key: bytes32 = self.currency_keys[synth]
         Exchanger(EXCHANGER).settle(settler, currency_key)
         self.is_settled[_token_id] = True
 
-    remaining_balance: uint256 = Settler(settler).withdraw(_receiver, _amount)
+    remaining: uint256 = Settler(settler).withdraw(_receiver, _amount)
 
-    if remaining_balance == 0:
+    if remaining == 0:
         self.id_to_owner[_token_id] = ZERO_ADDRESS
         self.id_to_approval[_token_id] = ZERO_ADDRESS
         self.owner_to_token_count[msg.sender] -= 1
@@ -558,8 +580,12 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
         self.settler_proxies[count] = settler
         self.settler_count = count + 1
         log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
+        owner = ZERO_ADDRESS
+        synth = ZERO_ADDRESS
 
-    return remaining_balance
+    log TokenUpdate(_token_id, owner, synth, remaining)
+
+    return remaining
 
 
 @external
@@ -611,6 +637,8 @@ def add_synth(_synth: address, _pool: address):
             has_synth = True
         else:
             self.swappable_synth[coin] = _synth
+
+    log NewSynth(_synth, _pool)
 
 
 @view
