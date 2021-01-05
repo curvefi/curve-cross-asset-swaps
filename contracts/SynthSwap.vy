@@ -145,6 +145,7 @@ def __init__(_settler_implementation: address):
     """
     self.settler_implementation = _settler_implementation
 
+    # deploy 10 settler contracts immediately
     for i in range(10):
         settler: address = create_forwarder_to(_settler_implementation)
         Settler(settler).initialize()
@@ -399,6 +400,7 @@ def swap_into_synth(
     if settler == ZERO_ADDRESS:
         count: uint256 = self.settler_count
         if count == 0:
+            # if there are no availale settler contracts we must deploy a new one
             settler = create_forwarder_to(self.settler_implementation)
             Settler(settler).initialize()
             log NewSettler(settler)
@@ -453,6 +455,7 @@ def swap_into_synth(
                     assert convert(response, bool)
                 self.is_approved[_from][registry_swap] = True
 
+        # use Curve to exchange for initial synth, which is sent to the settler
         synth_amount = RegistrySwap(registry_swap).exchange(
             self.synth_pools[intermediate_synth],
             _from,
@@ -463,6 +466,7 @@ def swap_into_synth(
             value=msg.value
         )
 
+    # use Synthetix to convert initial synth into the target synth
     initial_balance: uint256 = ERC20(_synth).balanceOf(settler)
     Settler(settler).exchange_via_snx(
         _synth,
@@ -473,6 +477,10 @@ def swap_into_synth(
     final_balance: uint256 = ERC20(_synth).balanceOf(settler)
     assert final_balance - initial_balance >= _expected, "Rekt by slippage"
 
+    # Represent the unsettled synth conversion as an NFT
+    # NFTs allow users to transfer the right to claim the synths once settled,
+    # prior to the actual settlement. They also make it easier to visualize
+    # this process on block explorers such as Etherscan.
     token_id: uint256 = convert(settler, uint256)
     self.is_settled[token_id] = False
     if _token_id == 0:
@@ -518,13 +526,16 @@ def swap_from_synth(
     synth: address = self.swappable_synth[_to]
     pool: address = self.synth_pools[synth]
 
+    # ensure the synth is settled prior to swapping
     if not self.is_settled[_token_id]:
         currency_key: bytes32 = self.currency_keys[synth]
         Exchanger(EXCHANGER).settle(settler, currency_key)
         self.is_settled[_token_id] = True
 
+    # use Curve to exchange the synth for another asset which is sent to the receiver
     remaining: uint256 = Settler(settler).exchange_via_curve(_to, pool, _amount, _expected, _receiver)
 
+    # if the balance of the synth within the NFT is now zero, burn the NFT
     if remaining == 0:
         self.id_to_owner[_token_id] = ZERO_ADDRESS
         self.id_to_approval[_token_id] = ZERO_ADDRESS
@@ -565,6 +576,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
     settler: address = convert(_token_id, address)
     synth: address = Settler(settler).synth()
 
+    # ensure the synth is settled prior to withdrawal
     if not self.is_settled[_token_id]:
         currency_key: bytes32 = self.currency_keys[synth]
         Exchanger(EXCHANGER).settle(settler, currency_key)
@@ -572,6 +584,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
 
     remaining: uint256 = Settler(settler).withdraw(_receiver, _amount)
 
+    # if the balance of the synth within the NFT is now zero, burn the NFT
     if remaining == 0:
         self.id_to_owner[_token_id] = ZERO_ADDRESS
         self.id_to_approval[_token_id] = ZERO_ADDRESS
