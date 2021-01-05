@@ -48,19 +48,19 @@ def __init__():
 
 
 @external
-def exchange_via_snx(
+def convert_synth(
     _target: address,
     _amount: uint256,
     _source_key: bytes32,
     _dest_key: bytes32
 ) -> bool:
     """
-    @notice Swap one synth into another
+    @notice Convert between two synths
     @dev Called via `SynthSwap.swap_into_synth`
-    @param _target Address of the synth being swapped into
-    @param _amount Amount of the original synth to exchange
-    @param _source_key Currency key for the synth being swapped from
-    @param _dest_key Currency key for the synth being swapped into
+    @param _target Address of the synth being converted into
+    @param _amount Amount of the original synth to convert
+    @param _source_key Currency key for the initial synth
+    @param _dest_key Currency key for the target synth
     @return bool Success
     """
     assert msg.sender == self.admin
@@ -72,7 +72,7 @@ def exchange_via_snx(
 
 
 @external
-def exchange_via_curve(
+def exchange(
     _target: address,
     _pool: address,
     _amount: uint256,

@@ -49,13 +49,13 @@ interface Settler:
     def initialize(): nonpayable
     def synth() -> address: view
     def time_to_settle() -> uint256: view
-    def exchange_via_snx(
+    def convert_synth(
         _target: address,
         _amount: uint256,
         _source_key: bytes32,
         _dest_key: bytes32
     ) -> bool: nonpayable
-    def exchange_via_curve(
+    def exchange(
         _target: address,
         _pool: address,
         _amount: uint256,
@@ -468,7 +468,7 @@ def swap_into_synth(
 
     # use Synthetix to convert initial synth into the target synth
     initial_balance: uint256 = ERC20(_synth).balanceOf(settler)
-    Settler(settler).exchange_via_snx(
+    Settler(settler).convert_synth(
         _synth,
         synth_amount,
         self.currency_keys[intermediate_synth],
@@ -533,7 +533,7 @@ def swap_from_synth(
         self.is_settled[_token_id] = True
 
     # use Curve to exchange the synth for another asset which is sent to the receiver
-    remaining: uint256 = Settler(settler).exchange_via_curve(_to, pool, _amount, _expected, _receiver)
+    remaining: uint256 = Settler(settler).exchange(_to, pool, _amount, _expected, _receiver)
 
     # if the balance of the synth within the NFT is now zero, burn the NFT
     if remaining == 0:
