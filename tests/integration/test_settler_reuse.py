@@ -17,7 +17,7 @@ def token_ids(chain, alice, bob, swap, DAI, USDT, sBTC, add_synths):
         tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
         token_ids.append(tx.events['Transfer'][-1]['token_id'])
 
-    chain.sleep(300)
+    chain.sleep(600)
 
     yield token_ids
 

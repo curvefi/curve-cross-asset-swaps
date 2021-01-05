@@ -8,13 +8,13 @@ def test_cannot_withdraw_immediately(alice, swap, settler_sbtc):
 
 
 def test_only_owner(bob, swap, settler_sbtc):
-    chain.sleep(300)
+    chain.sleep(600)
     with brownie.reverts("Caller is not owner or operator"):
         swap.withdraw(settler_sbtc.token_id(), 1, {'from': bob})
 
 
 def test_only_owner_direct(alice, swap, settler_sbtc):
-    chain.sleep(300)
+    chain.sleep(600)
     with brownie.reverts():
         # alice owns the token ID, but only `swap`
         # can call to the NFT contract
@@ -22,7 +22,7 @@ def test_only_owner_direct(alice, swap, settler_sbtc):
 
 
 def test_withdraw_all(alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
 
@@ -34,7 +34,7 @@ def test_withdraw_all(alice, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_all_burns(alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
 
@@ -48,7 +48,7 @@ def test_withdraw_all_burns(alice, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_partial(alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
     amount = initial // 4
@@ -61,7 +61,7 @@ def test_withdraw_partial(alice, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_partial_does_not_burn(alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
     amount = initial // 4
@@ -73,7 +73,7 @@ def test_withdraw_partial_does_not_burn(alice, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_multiple(alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
     amount = initial // 4
@@ -87,7 +87,7 @@ def test_withdraw_multiple(alice, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_zero(alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     initial = swap.token_info(token_id)['underlying_balance']
 
@@ -99,7 +99,7 @@ def test_withdraw_zero(alice, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_different_receiver(alice, bob, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
 
@@ -112,7 +112,7 @@ def test_withdraw_different_receiver(alice, bob, swap, settler_sbtc, sBTC):
 
 
 def test_withdraw_exceeds_balance(chain, alice, swap, settler_sbtc, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
 
@@ -122,12 +122,12 @@ def test_withdraw_exceeds_balance(chain, alice, swap, settler_sbtc, sBTC):
 
 def test_approved_operator(swap, alice, bob, settler_sbtc):
     swap.setApprovalForAll(bob, True, {'from': alice})
-    chain.sleep(300)
+    chain.sleep(600)
     swap.withdraw(settler_sbtc.token_id(), 1, {'from': bob})
 
 
 def test_approved_one_token_operator(swap, alice, bob, settler_sbtc):
     token_id = settler_sbtc.token_id()
     swap.approve(bob, token_id, {'from': alice})
-    chain.sleep(300)
+    chain.sleep(600)
     swap.withdraw(token_id, 1, {'from': bob})

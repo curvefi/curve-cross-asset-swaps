@@ -17,7 +17,7 @@ def test_usd_to_eth(Settler, alice, bob, swap, sUSD, sETH, curve_susd, curve_set
     tx = swap.swap_into_synth(initial, sETH, amount, 0, {'from': alice})
     token_id = tx.events['Transfer'][-1]['token_id']
 
-    chain.mine(timedelta=200)
+    chain.mine(timedelta=600)
     amount = swap.token_info(token_id)['underlying_balance']
     swap.swap_from_synth(token_id, ETH_ADDRESS, amount, 0, {'from': alice})
 
@@ -41,7 +41,7 @@ def test_eth_to_usd(Settler, alice, swap, sUSD, sETH, curve_susd, curve_seth, us
     tx = swap.swap_into_synth(ETH_ADDRESS, sUSD, alice.balance(), 0, {'from': alice, 'value': alice.balance()})
     token_id = tx.events['Transfer'][-1]['token_id']
 
-    chain.mine(timedelta=200)
+    chain.mine(timedelta=600)
     amount = swap.token_info(token_id)['underlying_balance']
     swap.swap_from_synth(token_id, final, amount, 0, {'from': alice})
 

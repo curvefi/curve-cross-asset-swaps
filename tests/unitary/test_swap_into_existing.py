@@ -62,7 +62,7 @@ def test_wrong_synth(swap, alice, DAI, sETH, settler_sbtc):
 
 
 def test_cannot_add_after_burn(chain, swap, alice, settler_sbtc, DAI, sBTC):
-    chain.mine(timedelta=300)
+    chain.mine(timedelta=600)
     token_id = settler_sbtc.token_id()
     balance = swap.token_info(token_id)['underlying_balance']
 
