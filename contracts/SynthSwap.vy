@@ -332,15 +332,17 @@ def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256
     intermediate_synth: address = self.swappable_synth[_from]
     pool: address = self.synth_pools[intermediate_synth]
 
-    i: int128 = 0
-    j: int128 = 0
-    is_underlying: bool = False
-    i, j, is_underlying = Registry(registry).get_coin_indices(pool, _from, intermediate_synth)
+    synth_amount: uint256 = _amount
+    if _from != intermediate_synth:
+        i: int128 = 0
+        j: int128 = 0
+        is_underlying: bool = False
+        i, j, is_underlying = Registry(registry).get_coin_indices(pool, _from, intermediate_synth)
 
-    received: uint256 = Curve(pool).get_dy(i, j, _amount)
+        synth_amount = Curve(pool).get_dy(i, j, _amount)
 
     return Exchanger(EXCHANGER).getAmountsForExchange(
-        received,
+        synth_amount,
         self.currency_keys[intermediate_synth],
         self.currency_keys[_synth],
     )[0]
