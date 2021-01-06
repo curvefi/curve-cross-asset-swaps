@@ -21,7 +21,7 @@ interface Curve:
 
 interface Registry:
     def get_coins(_pool: address) -> address[8]: view
-    def get_coin_indices(pool: address, _from: address, _to: address) -> (int128, int128, bool): view
+    def get_coin_indices(pool: address, _from: address, _to: address) -> (int128, int128): view
 
 interface RegistrySwap:
     def exchange(
@@ -326,8 +326,7 @@ def _get_swap_into(_from: address, _synth: address, _amount: uint256) -> uint256
     if _from != intermediate_synth:
         i: int128 = 0
         j: int128 = 0
-        is_underlying: bool = False
-        i, j, is_underlying = Registry(registry).get_coin_indices(pool, _from, intermediate_synth)
+        i, j = Registry(registry).get_coin_indices(pool, _from, intermediate_synth)
 
         synth_amount = Curve(pool).get_dy(i, j, _amount)
 
@@ -362,8 +361,7 @@ def _get_swap_from(_synth: address, _to: address, _amount: uint256) -> uint256:
 
     i: int128 = 0
     j: int128 = 0
-    is_underlying: bool = False
-    i, j, is_underlying = Registry(registry).get_coin_indices(pool, _synth, _to)
+    i, j = Registry(registry).get_coin_indices(pool, _synth, _to)
 
     return Curve(pool).get_dy(i, j, _amount)
 
