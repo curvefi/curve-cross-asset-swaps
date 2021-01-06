@@ -138,20 +138,23 @@ currency_keys: HashMap[address, bytes32]
 
 
 @external
-def __init__(_settler_implementation: address):
+def __init__(_settler_implementation: address, _settler_count: uint256):
     """
     @notice Contract constructor
     @param _settler_implementation `Settler` implementation deployment
     """
     self.settler_implementation = _settler_implementation
 
-    # deploy 10 settler contracts immediately
-    for i in range(10):
+    # deploy settler contracts immediately
+    for i in range(100):
+        if i == _settler_count:
+            break
         settler: address = create_forwarder_to(_settler_implementation)
         Settler(settler).initialize()
         self.settler_proxies[i] = settler
         log NewSettler(settler)
-    self.settler_count = 10
+
+    self.settler_count = _settler_count
 
 
 @view

@@ -35,7 +35,7 @@ def settler_implementation(Settler, alice):
 
 @pytest.fixture(scope="module")
 def swap(SynthSwap, alice, settler_implementation):
-    yield SynthSwap.deploy(settler_implementation, {'from': alice})
+    yield SynthSwap.deploy(settler_implementation, 3, {'from': alice})
 
 
 # settlers

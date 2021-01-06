@@ -15,7 +15,7 @@ SYNTHS = [
 
 def main(deployer=DEPLOYER):
     settler = Settler.deploy({'from': deployer})
-    swap = SynthSwap.deploy(settler, {'from': deployer})
+    swap = SynthSwap.deploy(settler, 10, {'from': deployer})
 
     for token, pool in SYNTHS:
         swap.add_synth(token, pool, {'from': deployer})
