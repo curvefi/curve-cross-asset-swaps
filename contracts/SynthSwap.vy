@@ -315,18 +315,8 @@ def setApprovalForAll(_operator: address, _approved: bool):
 
 
 @view
-@external
-def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256) -> uint256:
-    """
-    @notice Estimate the amount received when performing a cross-asset swap
-    @dev Used to calculate `_expected` when calling `swap_into_synth`. Be sure to
-         reduce the value slightly to account for market movement prior to the
-         transaction confirmation.
-    @param _from Address of the initial asset being exchanged
-    @param _synth Address of the synth being swapped into
-    @param _amount Amount of `_from` to swap
-    @return uint256 Expected amount of `_synth` received
-    """
+@internal
+def _get_swap_into(_from: address, _synth: address, _amount: uint256) -> uint256:
     registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
 
     intermediate_synth: address = self.swappable_synth[_from]
@@ -350,17 +340,23 @@ def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256
 
 @view
 @external
-def get_swap_from_synth_amount(_synth: address, _to: address, _amount: uint256) -> uint256:
+def get_swap_into_synth_amount(_from: address, _synth: address, _amount: uint256) -> uint256:
     """
-    @notice Estimate the amount received when swapping out of a settled synth.
-    @dev Used to calculate `_expected` when calling `swap_from_synth`. Be sure to
+    @notice Return the amount received when performing a cross-asset swap
+    @dev Used to calculate `_expected` when calling `swap_into_synth`. Be sure to
          reduce the value slightly to account for market movement prior to the
          transaction confirmation.
-    @param _synth Address of the synth being swapped out of
-    @param _to Address of the asset to swap into
-    @param _amount Amount of `_synth` being exchanged
-    @return uint256 Expected amount of `_to` received
+    @param _from Address of the initial asset being exchanged
+    @param _synth Address of the synth being swapped into
+    @param _amount Amount of `_from` to swap
+    @return uint256 Expected amount of `_synth` received
     """
+    return self._get_swap_into(_from, _synth, _amount)
+
+
+@view
+@internal
+def _get_swap_from(_synth: address, _to: address, _amount: uint256) -> uint256:
     registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
     pool: address = self.synth_pools[_synth]
 
@@ -370,6 +366,38 @@ def get_swap_from_synth_amount(_synth: address, _to: address, _amount: uint256) 
     i, j, is_underlying = Registry(registry).get_coin_indices(pool, _synth, _to)
 
     return Curve(pool).get_dy(i, j, _amount)
+
+
+@view
+@external
+def get_swap_from_synth_amount(_synth: address, _to: address, _amount: uint256) -> uint256:
+    """
+    @notice Return the amount received when swapping out of a settled synth
+    @dev Used to calculate `_expected` when calling `swap_from_synth`. Be sure to
+         reduce the value slightly to account for market movement prior to the
+         transaction confirmation.
+    @param _synth Address of the synth being swapped out of
+    @param _to Address of the asset to swap into
+    @param _amount Amount of `_synth` being exchanged
+    @return uint256 Expected amount of `_to` received
+    """
+    return self._get_swap_from(_synth, _to, _amount)
+
+
+@view
+@external
+def get_estimated_swap_amount(_from: address, _to: address, _amount: uint256) -> uint256:
+    """
+    @notice Estimate the final amount received when swapping between `_from` and `_to`
+    @dev Actual received amount may be different if synth rates change during settlement
+    @param _from Address of the initial asset being exchanged
+    @param _to Address of the asset to swap into
+    @param _amount Amount of `_from` being exchanged
+    @return uint256 Estimated amount of `_to` received
+    """
+    synth: address = self.swappable_synth[_to]
+    synth_amount: uint256 = self._get_swap_into(_from, synth, _amount)
+    return self._get_swap_from(synth, _to, synth_amount)
 
 
 @payable
