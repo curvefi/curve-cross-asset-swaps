@@ -679,8 +679,7 @@ def add_synth(_synth: address, _pool: address):
         if coin == _synth:
             self.synth_pools[_synth] = _pool
             has_synth = True
-        else:
-            self.swappable_synth[coin] = _synth
+        self.swappable_synth[coin] = _synth
 
     log NewSynth(_synth, _pool)
 
