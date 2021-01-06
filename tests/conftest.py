@@ -95,6 +95,11 @@ def sETH():
     yield MintableForkToken("0x5e74C9036fb86BD7eCdcb084a0673EFc32eA31cb")
 
 
+@pytest.fixture(scope="module")
+def sEUR():
+    yield MintableForkToken("0xD71eCFF9342A5Ced620049e616c5035F1dB98620")
+
+
 # swappable coins
 
 @pytest.fixture(scope="module")
@@ -129,10 +134,16 @@ def curve_seth(Contract):
     yield Contract("0xc5424b857f758e906013f3555dad202e4bdb4567")
 
 
+@pytest.fixture(scope="module")
+def curve_seur(Contract):
+    yield Contract("0x0Ce6a5fF5217e38315f87032CF90686C96627CAA")
+
+
 # test setup
 
 @pytest.fixture(scope="module")
-def add_synths(alice, swap, sUSD, sBTC, sETH, curve_susd, curve_sbtc, curve_seth):
+def add_synths(alice, swap, sUSD, sBTC, sETH, sEUR, curve_susd, curve_sbtc, curve_seth, curve_seur):
     swap.add_synth(sUSD, curve_susd, {'from': alice})
     swap.add_synth(sBTC, curve_sbtc, {'from': alice})
     swap.add_synth(sETH, curve_seth, {'from': alice})
+    swap.add_synth(sEUR, curve_seur, {'from': alice})
