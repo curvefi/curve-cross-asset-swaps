@@ -1,14 +1,12 @@
 import brownie
-from brownie import ZERO_ADDRESS
 
 
 def test_add_synth(alice, swap, sUSD, curve_susd):
     swap.add_synth(sUSD, curve_susd, {'from': alice})
 
     assert swap.synth_pools(sUSD) == curve_susd
-    for coin in [curve_susd.coins(i) for i in range(3)]:
+    for coin in [curve_susd.coins(i) for i in range(4)]:
         assert swap.swappable_synth(coin) == sUSD
-    assert swap.swappable_synth(sUSD) == ZERO_ADDRESS
 
 
 def test_already_added(alice, swap, sUSD, curve_susd):
