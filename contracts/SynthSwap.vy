@@ -43,6 +43,7 @@ interface Exchanger:
         destinationCurrencyKey: bytes32
     ) -> (uint256, uint256, uint256): view
     def maxSecsLeftInWaitingPeriod(account: address, currencyKey: bytes32) -> uint256: view
+    def settlementOwing(account: address, currencyKey: bytes32) -> (uint256, uint256): view
     def settle(user: address, currencyKey: bytes32): nonpayable
 
 interface Settler:
@@ -702,9 +703,13 @@ def token_info(_token_id: uint256) -> TokenInfo:
     settler: address = convert(_token_id, address)
     info.synth = Settler(settler).synth()
     info.underlying_balance = ERC20(info.synth).balanceOf(settler)
-    info.time_to_settle = Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(
-        settler,
-        self.currency_keys[info.synth]
-    )
+
+    if not self.is_settled[_token_id]:
+        currency_key: bytes32 = self.currency_keys[info.synth]
+        reclaim: uint256 = 0
+        rebate: uint256 = 0
+        reclaim, rebate = Exchanger(EXCHANGER).settlementOwing(settler, currency_key)
+        info.underlying_balance = info.underlying_balance - reclaim + rebate
+        info.time_to_settle = Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(settler, currency_key)
 
     return info
