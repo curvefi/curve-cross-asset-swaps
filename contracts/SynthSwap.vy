@@ -33,6 +33,9 @@ interface RegistrySwap:
         _receiver: address,
     ) -> uint256: payable
 
+interface SNXAddressResolver:
+    def getAddress(name: bytes32) -> address: view
+
 interface Synth:
     def currencyKey() -> bytes32: nonpayable
 
@@ -43,6 +46,7 @@ interface Exchanger:
         destinationCurrencyKey: bytes32
     ) -> (uint256, uint256, uint256): view
     def maxSecsLeftInWaitingPeriod(account: address, currencyKey: bytes32) -> uint256: view
+    def settlementOwing(account: address, currencyKey: bytes32) -> (uint256, uint256): view
     def settle(user: address, currencyKey: bytes32): nonpayable
 
 interface Settler:
@@ -110,7 +114,9 @@ struct TokenInfo:
 
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
-EXCHANGER: constant(address) = 0x0bfDc04B38251394542586969E2356d0D731f7DE
+
+SNX_ADDRESS_RESOLVER: constant(address) = 0x823bE81bbF96BEc0e25CA13170F5AaCb5B79ba83
+EXCHANGER_KEY: constant(bytes32) = 0x45786368616e6765720000000000000000000000000000000000000000000000
 
 # token id -> owner
 id_to_owner: HashMap[uint256, address]
@@ -136,6 +142,9 @@ is_approved: HashMap[address, HashMap[address, bool]]
 # synth -> currency key
 currency_keys: HashMap[address, bytes32]
 
+# Synthetix exchanger contract
+exchanger: Exchanger
+
 
 @external
 def __init__(_settler_implementation: address, _settler_count: uint256):
@@ -155,6 +164,7 @@ def __init__(_settler_implementation: address, _settler_count: uint256):
         log NewSettler(settler)
 
     self.settler_count = _settler_count
+    self.exchanger = Exchanger(SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY))
 
 
 @view
@@ -330,7 +340,7 @@ def _get_swap_into(_from: address, _synth: address, _amount: uint256) -> uint256
 
         synth_amount = Curve(pool).get_dy(i, j, _amount)
 
-    return Exchanger(EXCHANGER).getAmountsForExchange(
+    return self.exchanger.getAmountsForExchange(
         synth_amount,
         self.currency_keys[intermediate_synth],
         self.currency_keys[_synth],
@@ -560,7 +570,7 @@ def swap_from_synth(
     # ensure the synth is settled prior to swapping
     if not self.is_settled[_token_id]:
         currency_key: bytes32 = self.currency_keys[synth]
-        Exchanger(EXCHANGER).settle(settler, currency_key)
+        self.exchanger.settle(settler, currency_key)
         self.is_settled[_token_id] = True
 
     # use Curve to exchange the synth for another asset which is sent to the receiver
@@ -610,7 +620,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
     # ensure the synth is settled prior to withdrawal
     if not self.is_settled[_token_id]:
         currency_key: bytes32 = self.currency_keys[synth]
-        Exchanger(EXCHANGER).settle(settler, currency_key)
+        self.exchanger.settle(settler, currency_key)
         self.is_settled[_token_id] = True
 
     remaining: uint256 = Settler(settler).withdraw(_receiver, _amount)
@@ -647,7 +657,7 @@ def settle(_token_id: uint256) -> bool:
         settler: address = convert(_token_id, address)
         synth: address = Settler(settler).synth()
         currency_key: bytes32 = self.currency_keys[synth]
-        Exchanger(EXCHANGER).settle(settler, currency_key)  # dev: settlement failed
+        self.exchanger.settle(settler, currency_key)  # dev: settlement failed
         self.is_settled[_token_id] = True
 
     return True
@@ -702,9 +712,21 @@ def token_info(_token_id: uint256) -> TokenInfo:
     settler: address = convert(_token_id, address)
     info.synth = Settler(settler).synth()
     info.underlying_balance = ERC20(info.synth).balanceOf(settler)
-    info.time_to_settle = Exchanger(EXCHANGER).maxSecsLeftInWaitingPeriod(
-        settler,
-        self.currency_keys[info.synth]
-    )
+
+    if not self.is_settled[_token_id]:
+        currency_key: bytes32 = self.currency_keys[info.synth]
+        reclaim: uint256 = 0
+        rebate: uint256 = 0
+        reclaim, rebate = self.exchanger.settlementOwing(settler, currency_key)
+        info.underlying_balance = info.underlying_balance - reclaim + rebate
+        info.time_to_settle = self.exchanger.maxSecsLeftInWaitingPeriod(settler, currency_key)
 
     return info
+
+
+@external
+def rebuildCache():
+    """
+    @notice Update the current address of the SNX Exchanger contract
+    """
+    self.exchanger = Exchanger(SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY))

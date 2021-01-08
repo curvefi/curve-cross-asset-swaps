@@ -22,10 +22,12 @@ interface RegistrySwap:
     ) -> uint256: payable
 
 interface Synthetix:
-    def exchange(
+    def exchangeWithTracking(
         sourceCurrencyKey: bytes32,
         sourceAmount: uint256,
         destinationCurrencyKey: bytes32,
+        originator: address,
+        trackingCode: bytes32,
     ): nonpayable
     def settle(currencyKey: bytes32) -> uint256[3]: nonpayable
 
@@ -35,6 +37,7 @@ interface Synth:
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
 SNX: constant(address) = 0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F
+TRACKING_CODE: constant(bytes32) = 0x4355525645000000000000000000000000000000000000000000000000000000
 
 is_approved: HashMap[address, HashMap[address, bool]]
 
@@ -66,7 +69,7 @@ def convert_synth(
     assert msg.sender == self.admin
 
     self.synth = _target
-    Synthetix(SNX).exchange(_source_key, _amount, _dest_key)
+    Synthetix(SNX).exchangeWithTracking(_source_key, _amount, _dest_key, msg.sender, TRACKING_CODE)
 
     return True
 
