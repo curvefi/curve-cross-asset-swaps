@@ -408,6 +408,36 @@ def get_estimated_swap_amount(_from: address, _to: address, _amount: uint256) ->
     return self._get_swap_from(synth, _to, synth_amount)
 
 
+@view
+@external
+def token_info(_token_id: uint256) -> TokenInfo:
+    """
+    @notice Get information about the synth represented by an NFT
+    @param _token_id NFT token ID to query info about
+    @return NFT owner
+            Address of synth within the NFT
+            Balance of the synth
+            Max settlement time in seconds
+    """
+    info: TokenInfo = empty(TokenInfo)
+    info.owner = self.id_to_owner[_token_id]
+    assert info.owner != ZERO_ADDRESS
+
+    settler: address = convert(_token_id, address)
+    info.synth = Settler(settler).synth()
+    info.underlying_balance = ERC20(info.synth).balanceOf(settler)
+
+    if not self.is_settled[_token_id]:
+        currency_key: bytes32 = self.currency_keys[info.synth]
+        reclaim: uint256 = 0
+        rebate: uint256 = 0
+        reclaim, rebate = self.exchanger.settlementOwing(settler, currency_key)
+        info.underlying_balance = info.underlying_balance - reclaim + rebate
+        info.time_to_settle = self.exchanger.maxSecsLeftInWaitingPeriod(settler, currency_key)
+
+    return info
+
+
 @payable
 @external
 def swap_into_synth(
@@ -692,36 +722,6 @@ def add_synth(_synth: address, _pool: address):
         self.swappable_synth[coin] = _synth
 
     log NewSynth(_synth, _pool)
-
-
-@view
-@external
-def token_info(_token_id: uint256) -> TokenInfo:
-    """
-    @notice Get information about the synth represented by an NFT
-    @param _token_id NFT token ID to query info about
-    @return NFT owner
-            Address of synth within the NFT
-            Balance of the synth
-            Max settlement time in seconds
-    """
-    info: TokenInfo = empty(TokenInfo)
-    info.owner = self.id_to_owner[_token_id]
-    assert info.owner != ZERO_ADDRESS
-
-    settler: address = convert(_token_id, address)
-    info.synth = Settler(settler).synth()
-    info.underlying_balance = ERC20(info.synth).balanceOf(settler)
-
-    if not self.is_settled[_token_id]:
-        currency_key: bytes32 = self.currency_keys[info.synth]
-        reclaim: uint256 = 0
-        rebate: uint256 = 0
-        reclaim, rebate = self.exchanger.settlementOwing(settler, currency_key)
-        info.underlying_balance = info.underlying_balance - reclaim + rebate
-        info.time_to_settle = self.exchanger.maxSecsLeftInWaitingPeriod(settler, currency_key)
-
-    return info
 
 
 @external
