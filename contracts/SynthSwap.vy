@@ -169,6 +169,18 @@ def __init__(_settler_implementation: address, _settler_count: uint256):
 
 @view
 @external
+def name() -> String[15]:
+    return "Curve SynthSwap"
+
+
+@view
+@external
+def symbol() -> String[6]:
+    return "CRV/SS"
+
+
+@view
+@external
 def supportsInterface(_interface_id: bytes32) -> bool:
     """
     @dev Interface identification is specified in ERC-165
