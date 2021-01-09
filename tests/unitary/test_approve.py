@@ -7,7 +7,7 @@ from brownie import ZERO_ADDRESS
 
 @pytest.fixture(scope="module")
 def token_id(settler_sbtc, settler_susd, settler_seth):
-    yield settler_sbtc.token_id()
+    yield int(settler_sbtc.address, 16)
 
 
 def test_approve(swap, alice, bob, token_id):

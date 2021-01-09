@@ -115,7 +115,7 @@ struct TokenInfo:
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
 
-SNX_ADDRESS_RESOLVER: constant(address) = 0x823bE81bbF96BEc0e25CA13170F5AaCb5B79ba83
+SNX_ADDRESS_RESOLVER: constant(address) = 0x4E3b31eB0E5CB73641EE1E65E7dCEFe520bA3ef2
 EXCHANGER_KEY: constant(bytes32) = 0x45786368616e6765720000000000000000000000000000000000000000000000
 
 # token id -> owner
@@ -127,9 +127,16 @@ owner_to_token_count: HashMap[address, uint256]
 # owner -> operator -> is approved?
 owner_to_operators: HashMap[address, HashMap[address, bool]]
 
+# implementation contract used for `Settler` proxies
 settler_implementation: address
-settler_proxies: address[4294967296]
-settler_count: uint256
+
+# list of available token IDs
+# each token ID has an associated `Settler` contract, and to reduce
+# gas costs these contracts are reused. Each token ID is created from
+# [12 byte nonce][20 byte settler address]. The nonce starts at 0 and is
+# incremented each time the token ID is "freed" (added to `available_token_ids`)
+available_token_ids: uint256[4294967296]
+id_count: uint256
 
 # synth -> curve pool where it can be traded
 synth_pools: public(HashMap[address, address])
@@ -153,18 +160,29 @@ def __init__(_settler_implementation: address, _settler_count: uint256):
     @param _settler_implementation `Settler` implementation deployment
     """
     self.settler_implementation = _settler_implementation
+    self.exchanger = Exchanger(SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY))
 
     # deploy settler contracts immediately
+    self.id_count = _settler_count
     for i in range(100):
         if i == _settler_count:
             break
         settler: address = create_forwarder_to(_settler_implementation)
         Settler(settler).initialize()
-        self.settler_proxies[i] = settler
+        self.available_token_ids[i] = convert(settler, uint256)
         log NewSettler(settler)
 
-    self.settler_count = _settler_count
-    self.exchanger = Exchanger(SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY))
+
+@view
+@external
+def name() -> String[15]:
+    return "Curve SynthSwap"
+
+
+@view
+@external
+def symbol() -> String[6]:
+    return "CRV/SS"
 
 
 @view
@@ -408,6 +426,36 @@ def get_estimated_swap_amount(_from: address, _to: address, _amount: uint256) ->
     return self._get_swap_from(synth, _to, synth_amount)
 
 
+@view
+@external
+def token_info(_token_id: uint256) -> TokenInfo:
+    """
+    @notice Get information about the synth represented by an NFT
+    @param _token_id NFT token ID to query info about
+    @return NFT owner
+            Address of synth within the NFT
+            Balance of the synth
+            Max settlement time in seconds
+    """
+    info: TokenInfo = empty(TokenInfo)
+    info.owner = self.id_to_owner[_token_id]
+    assert info.owner != ZERO_ADDRESS
+
+    settler: address = convert(_token_id % (2**160), address)
+    info.synth = Settler(settler).synth()
+    info.underlying_balance = ERC20(info.synth).balanceOf(settler)
+
+    if not self.is_settled[_token_id]:
+        currency_key: bytes32 = self.currency_keys[info.synth]
+        reclaim: uint256 = 0
+        rebate: uint256 = 0
+        reclaim, rebate = self.exchanger.settlementOwing(settler, currency_key)
+        info.underlying_balance = info.underlying_balance - reclaim + rebate
+        info.time_to_settle = self.exchanger.maxSecsLeftInWaitingPeriod(settler, currency_key)
+
+    return info
+
+
 @payable
 @external
 def swap_into_synth(
@@ -416,7 +464,7 @@ def swap_into_synth(
     _amount: uint256,
     _expected: uint256,
     _receiver: address = msg.sender,
-    _token_id: uint256 = 0,
+    _existing_token_id: uint256 = 0,
 ) -> uint256:
     """
     @notice Perform a cross-asset swap between `_from` and `_synth`
@@ -431,31 +479,40 @@ def swap_into_synth(
     @param _expected Minimum amount of `_synth` to receive
     @param _receiver Address of the recipient of `_synth`, if not given
                        defaults to `msg.sender`
-    @param _token_id Token ID to deposit `_synth` into. If left as 0, a new NFT
+    @param _existing_token_id Token ID to deposit `_synth` into. If left as 0, a new NFT
                        is minted for the generated synth. If non-zero, the token ID
                        must be owned by `msg.sender` and must represent the same
                        synth as is being swapped into.
     @return uint256 NFT token ID
     """
-    settler: address = convert(_token_id, address)
-    if settler == ZERO_ADDRESS:
-        count: uint256 = self.settler_count
+    settler: address = ZERO_ADDRESS
+    token_id: uint256 = 0
+
+    if _existing_token_id == 0:
+        # if no token ID is given we are initiating a new swap
+        count: uint256 = self.id_count
         if count == 0:
             # if there are no availale settler contracts we must deploy a new one
             settler = create_forwarder_to(self.settler_implementation)
             Settler(settler).initialize()
+            token_id = convert(settler, uint256)
             log NewSettler(settler)
         else:
             count -= 1
-            settler = self.settler_proxies[count]
-            self.settler_count = count
+            token_id = self.available_token_ids[count]
+            settler = convert(token_id % (2**160), address)
+            self.id_count = count
     else:
-        owner: address = self.id_to_owner[_token_id]
+        # if a token ID is given we are adding to the balance of an existing swap
+        # so must check to make sure this is a permitted action
+        settler = convert(_existing_token_id % (2**160), address)
+        token_id = _existing_token_id
+        owner: address = self.id_to_owner[_existing_token_id]
         if msg.sender != owner:
             assert owner != ZERO_ADDRESS, "Unknown Token ID"
             assert (
                 self.owner_to_operators[owner][msg.sender] or
-                msg.sender == self.id_to_approval[_token_id]
+                msg.sender == self.id_to_approval[_existing_token_id]
             ), "Caller is not owner or operator"
         assert owner == _receiver, "Receiver is not owner"
         assert Settler(settler).synth() == _synth, "Incorrect synth for Token ID"
@@ -470,6 +527,7 @@ def swap_into_synth(
         synth_amount = _amount
     else:
         if _from != 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+            # Vyper equivalent of SafeERC20Transfer, handles most ERC20 return values
             response: Bytes[32] = raw_call(
                 _from,
                 concat(
@@ -518,13 +576,8 @@ def swap_into_synth(
     final_balance: uint256 = ERC20(_synth).balanceOf(settler)
     assert final_balance - initial_balance >= _expected, "Rekt by slippage"
 
-    # Represent the unsettled synth conversion as an NFT
-    # NFTs allow users to transfer the right to claim the synths once settled,
-    # prior to the actual settlement. They also make it easier to visualize
-    # this process on block explorers such as Etherscan.
-    token_id: uint256 = convert(settler, uint256)
-    self.is_settled[token_id] = False
-    if _token_id == 0:
+    # if this is a new swap, mint an NFT to represent the unsettled conversion
+    if _existing_token_id == 0:
         self.id_to_owner[token_id] = _receiver
         self.owner_to_token_count[_receiver] += 1
         log Transfer(ZERO_ADDRESS, _receiver, token_id)
@@ -563,7 +616,7 @@ def swap_from_synth(
             msg.sender == self.id_to_approval[_token_id]
         ), "Caller is not owner or operator"
 
-    settler: address = convert(_token_id, address)
+    settler: address = convert(_token_id % (2**160), address)
     synth: address = self.swappable_synth[_to]
     pool: address = self.synth_pools[synth]
 
@@ -580,13 +633,17 @@ def swap_from_synth(
     if remaining == 0:
         self.id_to_owner[_token_id] = ZERO_ADDRESS
         self.id_to_approval[_token_id] = ZERO_ADDRESS
+        self.is_settled[_token_id] = False
         self.owner_to_token_count[msg.sender] -= 1
-        count: uint256 = self.settler_count
-        self.settler_proxies[count] = settler
-        self.settler_count = count + 1
-        log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
+
+        count: uint256 = self.id_count
+        # add 2**160 to increment the nonce for next time this settler is used
+        self.available_token_ids[count] = _token_id + 2**160
+        self.id_count = count + 1
+
         owner = ZERO_ADDRESS
         synth = ZERO_ADDRESS
+        log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
 
     log TokenUpdate(_token_id, owner, synth, remaining)
 
@@ -614,7 +671,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
             msg.sender == self.id_to_approval[_token_id]
         ), "Caller is not owner or operator"
 
-    settler: address = convert(_token_id, address)
+    settler: address = convert(_token_id % (2**160), address)
     synth: address = Settler(settler).synth()
 
     # ensure the synth is settled prior to withdrawal
@@ -629,13 +686,18 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
     if remaining == 0:
         self.id_to_owner[_token_id] = ZERO_ADDRESS
         self.id_to_approval[_token_id] = ZERO_ADDRESS
+        self.is_settled[_token_id] = False
         self.owner_to_token_count[msg.sender] -= 1
-        count: uint256 = self.settler_count
-        self.settler_proxies[count] = settler
-        self.settler_count = count + 1
-        log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
+
+        count: uint256 = self.id_count
+        # add 2**160 to increment the nonce for next time this settler is used
+        self.available_token_ids[count] = _token_id + 2**160
+        self.id_count = count + 1
+
         owner = ZERO_ADDRESS
         synth = ZERO_ADDRESS
+        log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
+
 
     log TokenUpdate(_token_id, owner, synth, remaining)
 
@@ -654,7 +716,7 @@ def settle(_token_id: uint256) -> bool:
     if not self.is_settled[_token_id]:
         assert self.id_to_owner[_token_id] != ZERO_ADDRESS, "Unknown Token ID"
 
-        settler: address = convert(_token_id, address)
+        settler: address = convert(_token_id % (2**160), address)
         synth: address = Settler(settler).synth()
         currency_key: bytes32 = self.currency_keys[synth]
         self.exchanger.settle(settler, currency_key)  # dev: settlement failed
@@ -694,39 +756,15 @@ def add_synth(_synth: address, _pool: address):
     log NewSynth(_synth, _pool)
 
 
-@view
-@external
-def token_info(_token_id: uint256) -> TokenInfo:
-    """
-    @notice Get information about the synth represented by an NFT
-    @param _token_id NFT token ID to query info about
-    @return NFT owner
-            Address of synth within the NFT
-            Balance of the synth
-            Max settlement time in seconds
-    """
-    info: TokenInfo = empty(TokenInfo)
-    info.owner = self.id_to_owner[_token_id]
-    assert info.owner != ZERO_ADDRESS
-
-    settler: address = convert(_token_id, address)
-    info.synth = Settler(settler).synth()
-    info.underlying_balance = ERC20(info.synth).balanceOf(settler)
-
-    if not self.is_settled[_token_id]:
-        currency_key: bytes32 = self.currency_keys[info.synth]
-        reclaim: uint256 = 0
-        rebate: uint256 = 0
-        reclaim, rebate = self.exchanger.settlementOwing(settler, currency_key)
-        info.underlying_balance = info.underlying_balance - reclaim + rebate
-        info.time_to_settle = self.exchanger.maxSecsLeftInWaitingPeriod(settler, currency_key)
-
-    return info
-
-
 @external
 def rebuildCache():
     """
     @notice Update the current address of the SNX Exchanger contract
+    @dev The SNX exchanger address is kept in the local contract storage to reduce gas costs.
+         If this address changes, contract will stop working until the local address is updated.
+         Synthetix automates this process within their own architecture by exposing a `rebuildCache`
+         method in their own contracts, and calling them all to update via `AddressResolver.rebuildCaches`,
+         so we use the same API in order to be able to receive updates from them as well.
+         https://docs.synthetix.io/contracts/source/contracts/AddressResolver/#rebuildcaches
     """
     self.exchanger = Exchanger(SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY))

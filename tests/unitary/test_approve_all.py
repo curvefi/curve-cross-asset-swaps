@@ -32,5 +32,6 @@ def test_approval_all_event_fire(swap, alice, bob):
 
 
 def test_operator_approval(swap, alice, bob, charlie, settler_sbtc):
+    token_id = int(settler_sbtc.address, 16)
     swap.setApprovalForAll(bob, True, {'from': alice})
-    swap.approve(charlie, settler_sbtc.token_id(), {'from': bob})
+    swap.approve(charlie, token_id, {'from': bob})

@@ -1,3 +1,4 @@
+import brownie
 import itertools
 import pytest
 
@@ -23,7 +24,7 @@ def token_ids(chain, alice, bob, swap, DAI, USDT, sBTC, add_synths):
 
 
 @pytest.mark.parametrize("idx", itertools.permutations(range(4), 3))
-def test_reuse_token_id(Settler, swap, alice, bob, USDT, sBTC, sETH, token_ids, idx):
+def test_reuse_settler(Settler, swap, alice, bob, USDT, sBTC, sETH, token_ids, idx):
     for i in idx:
         balance = swap.token_info(token_ids[i])['underlying_balance']
         swap.withdraw(token_ids[i], balance, {'from': alice})
@@ -31,11 +32,12 @@ def test_reuse_token_id(Settler, swap, alice, bob, USDT, sBTC, sETH, token_ids, 
     for i in idx[::-1]:
         settler = Settler.at(hex(token_ids[i]))
         assert settler.synth() == sBTC
-        assert swap.is_settled(token_ids[i])
+        with brownie.reverts():
+            swap.ownerOf(token_ids[i])
 
         tx = swap.swap_into_synth(USDT, sETH, 1000 * 10 ** 6, 0, {'from': bob})
         token_id = tx.events['Transfer'][-1]['token_id']
-        assert token_id == token_ids[i]
+        assert token_id == token_ids[i] + 2**160
         assert not swap.is_settled(token_id)
         assert swap.ownerOf(token_id) == bob
         assert settler.synth() == sETH

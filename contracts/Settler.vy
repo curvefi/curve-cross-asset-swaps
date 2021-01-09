@@ -37,13 +37,15 @@ interface Synth:
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
 SNX: constant(address) = 0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F
+
+# "CURVE" as a bytes32
 TRACKING_CODE: constant(bytes32) = 0x4355525645000000000000000000000000000000000000000000000000000000
 
+# synth -> spender -> is approved?
 is_approved: HashMap[address, HashMap[address, bool]]
 
 admin: public(address)
 synth: public(address)
-
 
 @external
 def __init__():
@@ -135,15 +137,6 @@ def settle() -> bool:
     Synthetix(SNX).settle(currency_key)
 
     return True
-
-
-@view
-@external
-def token_id() -> uint256:
-    """
-    @notice Get the token ID representing this contract as an NFT in `SynthSwap`
-    """
-    return convert(self, uint256)
 
 
 @external
