@@ -128,7 +128,7 @@ owner_to_token_count: HashMap[address, uint256]
 owner_to_operators: HashMap[address, HashMap[address, bool]]
 
 settler_implementation: address
-settler_proxies: address[4294967296]
+settler_proxies: uint256[4294967296]
 settler_count: uint256
 
 # synth -> curve pool where it can be traded
@@ -160,7 +160,7 @@ def __init__(_settler_implementation: address, _settler_count: uint256):
             break
         settler: address = create_forwarder_to(_settler_implementation)
         Settler(settler).initialize()
-        self.settler_proxies[i] = settler
+        self.settler_proxies[i] = convert(settler, uint256)
         log NewSettler(settler)
 
     self.settler_count = _settler_count
@@ -435,7 +435,7 @@ def token_info(_token_id: uint256) -> TokenInfo:
     info.owner = self.id_to_owner[_token_id]
     assert info.owner != ZERO_ADDRESS
 
-    settler: address = convert(_token_id, address)
+    settler: address = convert(_token_id % (2**160), address)
     info.synth = Settler(settler).synth()
     info.underlying_balance = ERC20(info.synth).balanceOf(settler)
 
@@ -479,17 +479,20 @@ def swap_into_synth(
                        synth as is being swapped into.
     @return uint256 NFT token ID
     """
-    settler: address = convert(_token_id, address)
-    if settler == ZERO_ADDRESS:
+    settler: address = ZERO_ADDRESS
+    token_id: uint256 = 0
+    if _token_id == 0:
         count: uint256 = self.settler_count
         if count == 0:
             # if there are no availale settler contracts we must deploy a new one
             settler = create_forwarder_to(self.settler_implementation)
             Settler(settler).initialize()
+            token_id = convert(settler, uint256)
             log NewSettler(settler)
         else:
             count -= 1
-            settler = self.settler_proxies[count]
+            token_id = self.settler_proxies[count]
+            settler = convert(token_id % (2**160), address)
             self.settler_count = count
     else:
         owner: address = self.id_to_owner[_token_id]
@@ -500,6 +503,8 @@ def swap_into_synth(
                 msg.sender == self.id_to_approval[_token_id]
             ), "Caller is not owner or operator"
         assert owner == _receiver, "Receiver is not owner"
+        settler = convert(_token_id % (2**160), address)
+        token_id = _token_id
         assert Settler(settler).synth() == _synth, "Incorrect synth for Token ID"
 
     registry_swap: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
@@ -564,8 +569,6 @@ def swap_into_synth(
     # NFTs allow users to transfer the right to claim the synths once settled,
     # prior to the actual settlement. They also make it easier to visualize
     # this process on block explorers such as Etherscan.
-    token_id: uint256 = convert(settler, uint256)
-    self.is_settled[token_id] = False
     if _token_id == 0:
         self.id_to_owner[token_id] = _receiver
         self.owner_to_token_count[_receiver] += 1
@@ -605,7 +608,7 @@ def swap_from_synth(
             msg.sender == self.id_to_approval[_token_id]
         ), "Caller is not owner or operator"
 
-    settler: address = convert(_token_id, address)
+    settler: address = convert(_token_id % (2**160), address)
     synth: address = self.swappable_synth[_to]
     pool: address = self.synth_pools[synth]
 
@@ -624,7 +627,7 @@ def swap_from_synth(
         self.id_to_approval[_token_id] = ZERO_ADDRESS
         self.owner_to_token_count[msg.sender] -= 1
         count: uint256 = self.settler_count
-        self.settler_proxies[count] = settler
+        self.settler_proxies[count] = _token_id + 2**160
         self.settler_count = count + 1
         log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
         owner = ZERO_ADDRESS
@@ -656,7 +659,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
             msg.sender == self.id_to_approval[_token_id]
         ), "Caller is not owner or operator"
 
-    settler: address = convert(_token_id, address)
+    settler: address = convert(_token_id % (2**160), address)
     synth: address = Settler(settler).synth()
 
     # ensure the synth is settled prior to withdrawal
@@ -673,7 +676,7 @@ def withdraw(_token_id: uint256, _amount: uint256, _receiver: address = msg.send
         self.id_to_approval[_token_id] = ZERO_ADDRESS
         self.owner_to_token_count[msg.sender] -= 1
         count: uint256 = self.settler_count
-        self.settler_proxies[count] = settler
+        self.settler_proxies[count] = _token_id + 2**160
         self.settler_count = count + 1
         log Transfer(msg.sender, ZERO_ADDRESS, _token_id)
         owner = ZERO_ADDRESS
@@ -696,7 +699,7 @@ def settle(_token_id: uint256) -> bool:
     if not self.is_settled[_token_id]:
         assert self.id_to_owner[_token_id] != ZERO_ADDRESS, "Unknown Token ID"
 
-        settler: address = convert(_token_id, address)
+        settler: address = convert(_token_id % (2**160), address)
         synth: address = Settler(settler).synth()
         currency_key: bytes32 = self.currency_keys[synth]
         self.exchanger.settle(settler, currency_key)  # dev: settlement failed
