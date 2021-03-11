@@ -1,5 +1,4 @@
-from brownie import SynthSwap, Settler, accounts
-
+from brownie import Settler, SynthSwap, accounts
 
 # set the deployer here prior to running on mainnet
 DEPLOYER = accounts.add()

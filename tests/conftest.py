@@ -1,7 +1,6 @@
 import pytest
 from brownie_tokens import MintableForkToken
 
-
 # isolation
 
 

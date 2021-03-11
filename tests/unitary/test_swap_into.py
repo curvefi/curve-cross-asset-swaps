@@ -1,7 +1,6 @@
-import pytest
-
 import brownie
-from brownie import Settler, ETH_ADDRESS, ZERO_ADDRESS
+import pytest
+from brownie import ETH_ADDRESS, ZERO_ADDRESS, Settler
 
 
 @pytest.fixture(scope="module", autouse=True)

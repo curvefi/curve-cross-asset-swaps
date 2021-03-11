@@ -1,7 +1,6 @@
 import brownie
-from brownie import Contract, Settler, ZERO_ADDRESS, accounts, chain
+from brownie import ZERO_ADDRESS, Contract, Settler, accounts, chain
 from brownie.test import strategy
-
 from brownie_tokens import MintableForkToken
 
 TOKENS = [

@@ -1,6 +1,5 @@
 import brownie
 import pytest
-
 from brownie import ZERO_ADDRESS
 
 

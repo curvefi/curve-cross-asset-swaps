@@ -1,5 +1,6 @@
-import brownie
 import itertools
+
+import brownie
 import pytest
 
 
