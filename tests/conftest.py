@@ -4,12 +4,14 @@ from brownie_tokens import MintableForkToken
 
 # isolation
 
+
 @pytest.fixture(autouse=True)
 def isolation_setup(fn_isolation):
     pass
 
 
 # account helpers
+
 
 @pytest.fixture(scope="session")
 def alice(accounts):
@@ -28,26 +30,28 @@ def charlie(accounts):
 
 # deployments
 
+
 @pytest.fixture(scope="module")
 def settler_implementation(Settler, alice):
-    yield Settler.deploy({'from': alice})
+    yield Settler.deploy({"from": alice})
 
 
 @pytest.fixture(scope="module")
 def swap(SynthSwap, alice, settler_implementation):
-    yield SynthSwap.deploy(settler_implementation, 3, {'from': alice})
+    yield SynthSwap.deploy(settler_implementation, 3, {"from": alice})
 
 
 # settlers
+
 
 @pytest.fixture(scope="module")
 def settler_sbtc(Settler, alice, swap, DAI, sBTC, add_synths):
     amount = 1_000_000 * 10 ** 18
     DAI._mint_for_testing(alice, amount)
-    DAI.approve(swap, 2**256-1, {'from': alice})
+    DAI.approve(swap, 2 ** 256 - 1, {"from": alice})
 
-    tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['token_id']
+    tx = swap.swap_into_synth(DAI, sBTC, amount, 0, {"from": alice})
+    token_id = tx.events["Transfer"][-1]["token_id"]
 
     yield Settler.at(hex(token_id))
 
@@ -57,10 +61,10 @@ def settler_seth(Settler, alice, swap, DAI, sETH, add_synths):
 
     amount = 1_000_000 * 10 ** 18
     DAI._mint_for_testing(alice, amount)
-    DAI.approve(swap, 2**256-1, {'from': alice})
+    DAI.approve(swap, 2 ** 256 - 1, {"from": alice})
 
-    tx = swap.swap_into_synth(DAI, sETH, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['token_id']
+    tx = swap.swap_into_synth(DAI, sETH, amount, 0, {"from": alice})
+    token_id = tx.events["Transfer"][-1]["token_id"]
 
     yield Settler.at(hex(token_id))
 
@@ -70,15 +74,16 @@ def settler_susd(Settler, alice, swap, WBTC, sUSD, add_synths):
 
     amount = 50 * 10 ** 8
     WBTC._mint_for_testing(alice, amount)
-    WBTC.approve(swap, 2**256-1, {'from': alice})
+    WBTC.approve(swap, 2 ** 256 - 1, {"from": alice})
 
-    tx = swap.swap_into_synth(WBTC, sUSD, amount, 0, {'from': alice})
-    token_id = tx.events['Transfer'][-1]['token_id']
+    tx = swap.swap_into_synth(WBTC, sUSD, amount, 0, {"from": alice})
+    token_id = tx.events["Transfer"][-1]["token_id"]
 
     yield Settler.at(hex(token_id))
 
 
 # synths
+
 
 @pytest.fixture(scope="module")
 def sUSD():
@@ -102,6 +107,7 @@ def sEUR():
 
 # swappable coins
 
+
 @pytest.fixture(scope="module")
 def DAI():
     yield MintableForkToken("0x6B175474E89094C44Da98b954EedeAC495271d0F")
@@ -118,6 +124,7 @@ def WBTC():
 
 
 # curve pools
+
 
 @pytest.fixture(scope="module")
 def curve_susd(Contract):
@@ -141,9 +148,12 @@ def curve_seur(Contract):
 
 # test setup
 
+
 @pytest.fixture(scope="module")
-def add_synths(alice, swap, sUSD, sBTC, sETH, sEUR, curve_susd, curve_sbtc, curve_seth, curve_seur):
-    swap.add_synth(sUSD, curve_susd, {'from': alice})
-    swap.add_synth(sBTC, curve_sbtc, {'from': alice})
-    swap.add_synth(sETH, curve_seth, {'from': alice})
-    swap.add_synth(sEUR, curve_seur, {'from': alice})
+def add_synths(
+    alice, swap, sUSD, sBTC, sETH, sEUR, curve_susd, curve_sbtc, curve_seth, curve_seur
+):
+    swap.add_synth(sUSD, curve_susd, {"from": alice})
+    swap.add_synth(sBTC, curve_sbtc, {"from": alice})
+    swap.add_synth(sETH, curve_seth, {"from": alice})
+    swap.add_synth(sEUR, curve_seur, {"from": alice})

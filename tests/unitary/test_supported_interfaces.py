@@ -1,4 +1,3 @@
-
 def test_erc165_support(swap):
     erc165_interface_id = "0x01ffc9a7"
     assert swap.supportsInterface(erc165_interface_id) is True
