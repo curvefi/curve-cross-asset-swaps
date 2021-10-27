@@ -31,6 +31,18 @@ getApproved: public(HashMap[uint256, address])
 isApprovedForAll: public(HashMap[address, HashMap[address, bool]])
 ownerOf: public(HashMap[uint256, address])
 
+base_uri: String[178]
+
+owner: public(address)
+future_owner: public(address)
+
+
+@external
+def __init__(_base_uri: String[178]):
+    self.base_uri = _base_uri
+
+    self.owner = msg.sender
+
 
 @internal
 def _transfer(_from: address, _to: address, _token_id: uint256):
@@ -122,3 +134,67 @@ def transferFrom(_from: address, _to: address, _token_id: uint256):
     assert _from == owner
 
     self._transfer(_from, _to, _token_id)
+
+
+@external
+def commit_transfer_ownership(_future_owner: address):
+    assert msg.sender == self.owner
+    self.future_owner = _future_owner
+
+
+@external
+def accept_transfer_ownership():
+    future_owner: address = self.future_owner
+    assert msg.sender == future_owner
+    self.owner = future_owner
+
+
+@external
+def set_base_uri(_base_uri: String[178]):
+    assert msg.sender == self.owner
+    self.base_uri = _base_uri
+
+
+@view
+@external
+def name() -> String[32]:
+    return "Curve SynthSwap 2"
+
+
+@view
+@external
+def symbol() -> String[32]:
+    return "CRV/SS-2"
+
+
+@view
+@external
+def tokenURI(_token_id: uint256) -> String[256]:
+    # This is likely prohibitively expensive if called on-chain.
+    base_uri: String[178] = self.base_uri
+    assert len(base_uri) != 0
+    assert self.ownerOf[_token_id] != ZERO_ADDRESS
+
+    if _token_id == 0:
+        return concat(base_uri, "0")
+
+    buffer: Bytes[78] = b""
+    digits: uint256 = 78
+
+    for i in range(78):
+        # go forward to find the # of digits, and set it
+        # only if we have found the last index
+        if digits == 78 and _token_id / 10 ** i == 0:
+            digits = i
+
+        value: uint256 = ((_token_id / 10 ** (77 - i)) % 10) + 48
+        char: Bytes[1] = slice(convert(value, bytes32), 31, 1)
+        # EIP-2929: *CALL opcodes to precompiles cost 100 gas
+        buffer = raw_call(
+            convert(4, address),
+            concat(buffer, char),
+            max_outsize=78,
+            is_static_call=True
+        )
+
+    return concat(base_uri, convert(slice(buffer, 78 - digits, digits), String[78]))
