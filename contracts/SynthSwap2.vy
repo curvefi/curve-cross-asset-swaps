@@ -36,6 +36,11 @@ base_uri: String[178]
 owner: public(address)
 future_owner: public(address)
 
+# token_id -> [local index][global index]
+token_positions: HashMap[uint256, uint256]
+totalSupply: public(uint256)
+tokenOfOwnerByIndex: public(HashMap[address, uint256[MAX_INT128]])
+tokenByIndex: public(uint256[MAX_INT128])
 
 @external
 def __init__(_base_uri: String[178]):
@@ -53,9 +58,33 @@ def _transfer(_from: address, _to: address, _token_id: uint256):
         self.getApproved[_token_id] = ZERO_ADDRESS
         log Approval(_from, ZERO_ADDRESS, _token_id)
 
+    # update enumeration data
+    f_last_idx: uint256 = self.balanceOf[_from] - 1
+
+    t_pos: uint256 = self.token_positions[_token_id]
+    t_local_idx: uint256 = shift(t_pos, -128)
+    t_global_idx: uint256 = t_pos % 2 ** 128
+
+    # replace token in from array if necessary
+    if t_local_idx != f_last_idx:
+        # last token id
+        t_last: uint256 = self.tokenOfOwnerByIndex[_from][f_last_idx]
+        # update the last token's position with it's new spot
+        self.token_positions[t_last] = shift(t_local_idx, 128) + self.token_positions[t_last] % 2 ** 128
+        # replace the old token with the last token
+        self.tokenOfOwnerByIndex[_from][t_local_idx] = t_last
+    # zero out the storage at the last token's position
+    self.tokenOfOwnerByIndex[_from][f_last_idx] = 0
+
+    # add the token to recipient's array of tokens
+    t_last_idx: uint256 = self.balanceOf[_to]
+    self.tokenOfOwnerByIndex[_to][t_last_idx] = _token_id
+    # update it's position
+    self.token_positions[_token_id] = shift(t_last_idx, 128) + t_global_idx
+
     self.ownerOf[_token_id] = _to
-    self.balanceOf[_from] -= 1
-    self.balanceOf[_to] += 1
+    self.balanceOf[_from] = f_last_idx
+    self.balanceOf[_to] = t_last_idx + 1
     log Transfer(_from, _to, _token_id)
 
 
