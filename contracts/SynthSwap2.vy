@@ -6,8 +6,33 @@
 """
 
 
+interface AddressProvider:
+    def get_registry() -> address: view
+    def get_address(_idx: uint256) -> address: view
+
+interface Registry:
+    # actually returns an address
+    def get_lp_token(_pool: address) -> uint256: view
+    # actually returns (int128, int128, bool)
+    def get_coin_indices(_pool: address, _from: address, _to: address) -> uint256[3]: view
+    def get_coin_swap_complement(_coin: address, _idx: uint256) -> address: view
+
+interface RegistryExchange:
+    def get_best_rate(_from: address, _to: address, _amount: uint256) -> (address, uint256): view
+
 interface ERC721Receiver:
     def onERC721Received(_operator: address, _from: address, _token_id: uint256, _data: Bytes[512]) -> uint256: nonpayable
+
+interface SynthExchanger:
+    # actually returns (uint256, uint256, uint256)
+    def getAmountsForExchange(_amount: uint256, _source_key: bytes32, _dest_key: bytes32) -> uint256: view
+
+interface SNXAddressResolver:
+    # is it just me or is this a weird address resolution system
+    def getAddress(_name: bytes32) -> address: view
+
+interface Synth:
+    def currencyKey() -> bytes32: view
 
 
 event Approval:
@@ -24,6 +49,20 @@ event Transfer:
     _from: indexed(address)
     _to: indexed(address)
     _token_id: indexed(uint256)
+
+
+# swap data used when performing an exchange
+struct SwapData:
+    _pool: address
+    _i: uint256
+    _j: uint256
+    _use_underlying: bool
+
+
+ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
+SNX_ADDRESS_RESOLVER: constant(address) = 0x4E3b31eB0E5CB73641EE1E65E7dCEFe520bA3ef2
+# "0x" + b"Exchanger".hex() + "00" * 23
+EXCHANGER_KEY: constant(bytes32) = 0x45786368616e6765720000000000000000000000000000000000000000000000
 
 
 balanceOf: public(HashMap[address, uint256])
@@ -47,6 +86,16 @@ def __init__(_base_uri: String[178]):
     self.base_uri = _base_uri
 
     self.owner = msg.sender
+
+
+@view
+@internal
+def _get_indices(_pool: address, _from: address, _to: address) -> uint256[3]:
+    # check if a pool exists in the main registry or the factory
+    registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
+    if Registry(registry).get_lp_token(_pool) == 0:
+        registry = AddressProvider(ADDRESS_PROVIDER).get_address(3)
+    return Registry(registry).get_coin_indices(_pool, _from, _to)
 
 
 @internal
@@ -163,6 +212,116 @@ def transferFrom(_from: address, _to: address, _token_id: uint256):
     assert _from == owner
 
     self._transfer(_from, _to, _token_id)
+
+
+@view
+@external
+def get_swap_in_data(
+    _from: address, _synth_a: address, _synth_b: address, _amount: uint256
+) -> (SwapData[2], uint256):
+    """
+    @notice Get swap data used for making the swap_in exchange.
+    @param _from The input asset (e.g. USDC/DAI/USDT)
+    @param _synth_a A synth of the same asset class as `_from` (e.g. sUSD)
+    @param _synth_b The output synth in the desired asset class (e.g. sBTC)
+    @param _amount The input amount for the trade
+    @return SwapData[2] A list of at maximum two swap datas. If empty a swap is not possible
+    @return uint256 The expected output amount of `_synth_b`
+    """
+    assert _synth_a != _synth_b  # dev: no synth swap required
+    registry_exchange: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
+    swaps: SwapData[2] = empty(SwapData[2])
+    snx_exchanger: address = SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY)
+
+    # check if simple exchange exists
+    pool_0: address = ZERO_ADDRESS
+    dy_0: uint256 = 0
+    pool_0, dy_0 = RegistryExchange(registry_exchange).get_best_rate(_from, _synth_a, _amount)
+    if pool_0 != ZERO_ADDRESS:
+        indices: uint256[3] = self._get_indices(pool_0, _from, _synth_a)
+        swaps[0] = SwapData({
+            _pool: pool_0,
+            _i: indices[0],
+            _j: indices[1],
+            _use_underlying: convert(indices[2], bool),
+        })
+        output: uint256 = SynthExchanger(snx_exchanger).getAmountsForExchange(dy_0, Synth(_synth_a).currencyKey(), Synth(_synth_b).currencyKey())
+        return swaps, output
+
+    # iterate through complements and find an intersection
+    # NOTE: This approach doesn't take into account intersections which
+    # occur exclusively via factory pools. This is due to the fact
+    # that the factory does not have the `get_coin_swap_complement` fn
+    registry: address = AddressProvider(ADDRESS_PROVIDER).get_registry()
+    best_complement: address = ZERO_ADDRESS
+    best_pool_0: address = ZERO_ADDRESS
+    best_pool_1: address = ZERO_ADDRESS
+    best_dy: uint256 = 0
+
+    break_left: bool = False
+    break_right: bool = False
+    for i in range(128):
+        if break_left and break_right:
+            break
+
+        for coin in [_from, _synth_a]:
+            # if no more complements, continue
+            if break_left and coin == _from:
+                continue
+            if break_right and coin == _synth_a:
+                continue
+
+            # the set of complements for a coin has no duplicates
+            complement: address = Registry(registry).get_coin_swap_complement(coin, i)
+            if complement == ZERO_ADDRESS:
+                if coin == _from:
+                    break_left = True
+                else:
+                    break_right = True
+                continue
+
+            # there will be repeat calls for coins which are in both sets of
+            # complements. We can prevent this by keeping track of complements
+            # and not making the call on the second appearance. (Using a bloom filter perhaps?)
+            pool_0, dy_0 = RegistryExchange(registry_exchange).get_best_rate(_from, complement, _amount)
+            if pool_0 == ZERO_ADDRESS:
+                continue
+            pool_1: address = ZERO_ADDRESS
+            dy_1: uint256 = 0
+            pool_1, dy_1 = RegistryExchange(registry_exchange).get_best_rate(complement, _synth_a, dy_0)
+            if pool_1 == ZERO_ADDRESS:
+                continue
+            if dy_1 < best_dy:
+                continue
+
+            # found the best, set the appropriate values and then continue
+            best_dy = dy_1
+            best_pool_0 = pool_0
+            best_pool_1 = pool_1
+            best_complement = complement
+
+    # return empty if we did not find anything
+    if best_complement == ZERO_ADDRESS:
+        return swaps, 0
+
+    # update the swaps variable with indices info
+    indices: uint256[3] = self._get_indices(best_pool_0, _from, best_complement)
+    swaps[0] = SwapData({
+        _pool: best_pool_0,
+        _i: indices[0],
+        _j: indices[1],
+        _use_underlying: convert(indices[2], bool)
+    })
+    indices = self._get_indices(best_pool_1, best_complement, _synth_a)
+    swaps[1] = SwapData({
+        _pool: best_pool_1,
+        _i: indices[0],
+        _j: indices[1],
+        _use_underlying: convert(indices[2], bool)
+    })
+
+    output: uint256 = SynthExchanger(snx_exchanger).getAmountsForExchange(best_dy, Synth(_synth_a).currencyKey(), Synth(_synth_b).currencyKey())
+    return swaps, output
 
 
 @external
