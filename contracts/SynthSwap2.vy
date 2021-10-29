@@ -81,6 +81,7 @@ totalSupply: public(uint256)
 tokenOfOwnerByIndex: public(HashMap[address, uint256[MAX_INT128]])
 tokenByIndex: public(uint256[MAX_INT128])
 
+
 @external
 def __init__(_base_uri: String[178]):
     self.base_uri = _base_uri
@@ -96,6 +97,27 @@ def _get_indices(_pool: address, _from: address, _to: address) -> uint256[3]:
     if Registry(registry).get_lp_token(_pool) == 0:
         registry = AddressProvider(ADDRESS_PROVIDER).get_address(3)
     return Registry(registry).get_coin_indices(_pool, _from, _to)
+
+
+@internal
+def _mint(_to: address, _token_id: uint256):
+    assert _to != ZERO_ADDRESS  # dev: cannot mint to ZERO_ADDRESS
+    assert self.ownerOf[_token_id] == ZERO_ADDRESS  # dev: already minted
+
+    global_idx: uint256 = self.totalSupply
+    local_idx: uint256 = self.balanceOf[_to]
+
+    # add to enumeration targets
+    self.token_positions[_token_id] = shift(local_idx, 128) + global_idx
+    self.tokenByIndex[global_idx] = _token_id
+    self.tokenOfOwnerByIndex[_to][local_idx] = _token_id
+
+    # update local and global balances
+    self.totalSupply = global_idx + 1
+    self.balanceOf[_to] = local_idx + 1
+    self.ownerOf[_token_id] = _to
+
+    log Transfer(ZERO_ADDRESS, _to, _token_id)
 
 
 @internal
