@@ -1,5 +1,3 @@
 brownie-token-tester>=0.1.0
 eth-brownie>=1.12.4,<2.0.0
-black==19.10b0
-flake8==3.8.4
-isort==5.7.0
+-e git+https://github.com/vyperlang/vyper@ac7da853a962ae050aeaa03749d2279394961f15#egg=vyper
