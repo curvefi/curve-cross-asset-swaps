@@ -238,19 +238,23 @@ def transferFrom(_from: address, _to: address, _token_id: uint256):
 
 @view
 @external
-def get_swap_in_data(
-    _from: address, _synth_a: address, _synth_b: address, _amount: uint256
+def get_swap_data(
+    _from: address, _to: address, _synth: address, _amount: uint256
 ) -> (SwapData[2], uint256):
     """
-    @notice Get swap data used for making the swap_in exchange.
-    @param _from The input asset (e.g. USDC/DAI/USDT)
-    @param _synth_a A synth of the same asset class as `_from` (e.g. sUSD)
-    @param _synth_b The output synth in the desired asset class (e.g. sBTC)
+    @notice Get swap data used for making an exchange.
+    @param _from The input asset, this can be a standard asset or a synth, depending on
+        the purpose of the output. If making a `swap_out` call, this should be a synth.
+    @param _to A token of the same asset class as `_from`. If doing a `swap_in` call
+        this should be a synth, if making a `swap_out` call this should be the target
+        asset (e.g. wBTC).
+    @param _synth For `swap_in` calls, this should be a synth of the desired asset class.
+        For other calls, this can be the ZERO_ADDRESS.
     @param _amount The input amount for the trade
-    @return SwapData[2] A list of at maximum two swap datas. If empty a swap is not possible
-    @return uint256 The expected output amount of `_synth_b`
+    @return SwapData[2] A list of at maximum two swap datas. If empty, a swap is not possible
+    @return uint256 The expected output amount of `_synth` or `_to` if `_synth` is the
+        ZERO_ADDRESS.
     """
-    assert _synth_a != _synth_b  # dev: no synth swap required
     registry_exchange: address = AddressProvider(ADDRESS_PROVIDER).get_address(2)
     swaps: SwapData[2] = empty(SwapData[2])
     snx_exchanger: address = SNXAddressResolver(SNX_ADDRESS_RESOLVER).getAddress(EXCHANGER_KEY)
@@ -258,16 +262,18 @@ def get_swap_in_data(
     # check if simple exchange exists
     pool_0: address = ZERO_ADDRESS
     dy_0: uint256 = 0
-    pool_0, dy_0 = RegistryExchange(registry_exchange).get_best_rate(_from, _synth_a, _amount)
+    pool_0, dy_0 = RegistryExchange(registry_exchange).get_best_rate(_from, _to, _amount)
     if pool_0 != ZERO_ADDRESS:
-        indices: uint256[3] = self._get_indices(pool_0, _from, _synth_a)
+        indices: uint256[3] = self._get_indices(pool_0, _from, _to)
         swaps[0] = SwapData({
             _pool: pool_0,
             _i: indices[0],
             _j: indices[1],
             _use_underlying: convert(indices[2], bool),
         })
-        output: uint256 = SynthExchanger(snx_exchanger).getAmountsForExchange(dy_0, Synth(_synth_a).currencyKey(), Synth(_synth_b).currencyKey())
+        output: uint256 = dy_0
+        if _synth != ZERO_ADDRESS:
+            output = SynthExchanger(snx_exchanger).getAmountsForExchange(dy_0, Synth(_to).currencyKey(), Synth(_synth).currencyKey())
         return swaps, output
 
     # iterate through complements and find an intersection
@@ -286,11 +292,11 @@ def get_swap_in_data(
         if break_left and break_right:
             break
 
-        for coin in [_from, _synth_a]:
+        for coin in [_from, _to]:
             # if no more complements, continue
             if break_left and coin == _from:
                 continue
-            if break_right and coin == _synth_a:
+            if break_right and coin == _to:
                 continue
 
             # the set of complements for a coin has no duplicates
@@ -310,7 +316,7 @@ def get_swap_in_data(
                 continue
             pool_1: address = ZERO_ADDRESS
             dy_1: uint256 = 0
-            pool_1, dy_1 = RegistryExchange(registry_exchange).get_best_rate(complement, _synth_a, dy_0)
+            pool_1, dy_1 = RegistryExchange(registry_exchange).get_best_rate(complement, _to, dy_0)
             if pool_1 == ZERO_ADDRESS:
                 continue
             if dy_1 < best_dy:
@@ -334,7 +340,7 @@ def get_swap_in_data(
         _j: indices[1],
         _use_underlying: convert(indices[2], bool)
     })
-    indices = self._get_indices(best_pool_1, best_complement, _synth_a)
+    indices = self._get_indices(best_pool_1, best_complement, _to)
     swaps[1] = SwapData({
         _pool: best_pool_1,
         _i: indices[0],
@@ -342,7 +348,9 @@ def get_swap_in_data(
         _use_underlying: convert(indices[2], bool)
     })
 
-    output: uint256 = SynthExchanger(snx_exchanger).getAmountsForExchange(best_dy, Synth(_synth_a).currencyKey(), Synth(_synth_b).currencyKey())
+    output: uint256 = best_dy
+    if _synth != ZERO_ADDRESS:
+        output = SynthExchanger(snx_exchanger).getAmountsForExchange(best_dy, Synth(_to).currencyKey(), Synth(_synth).currencyKey())
     return swaps, output
 
 
