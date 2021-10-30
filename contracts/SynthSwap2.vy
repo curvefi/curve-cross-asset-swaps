@@ -100,6 +100,49 @@ def _get_indices(_pool: address, _from: address, _to: address) -> uint256[3]:
 
 
 @internal
+def _burn(_from: address, _token_id: uint256):
+    assert self.ownerOf[_token_id] == _from
+
+    # update enumeration data
+    f_last_idx: uint256 = self.balanceOf[_from] - 1
+
+    t_pos: uint256 = self.token_positions[_token_id]
+    t_local_idx: uint256 = shift(t_pos, -128)
+
+    # replace token in from array if necessary
+    if t_local_idx != f_last_idx:
+        # last token id
+        t_last: uint256 = self.tokenOfOwnerByIndex[_from][f_last_idx]
+        # update the last token's position with it's new spot
+        self.token_positions[t_last] = shift(t_local_idx, 128) + self.token_positions[t_last] % 2 ** 128
+        # replace the old token with the last token
+        self.tokenOfOwnerByIndex[_from][t_local_idx] = t_last
+    # zero out the storage at the last token's position
+    self.tokenOfOwnerByIndex[_from][f_last_idx] = 0
+
+    # do the same globally now
+    t_global_idx: uint256 = t_pos % 2 ** 128
+    global_last_idx: uint256 = self.totalSupply - 1
+
+    if t_global_idx != global_last_idx:
+        t_last: uint256 = self.tokenByIndex[global_last_idx]
+        self.token_positions[t_last] = self.token_positions[t_last] % 2 ** 128 + t_global_idx
+        self.tokenByIndex[t_global_idx] = t_last
+    self.tokenByIndex[global_last_idx] = 0
+
+    self.totalSupply = global_last_idx
+    self.balanceOf[_from] = f_last_idx
+    self.ownerOf[_token_id] = ZERO_ADDRESS
+
+    # reset approval if needed
+    if self.getApproved[_token_id] != ZERO_ADDRESS:
+        self.getApproved[_token_id] = ZERO_ADDRESS
+        log Approval(_from, ZERO_ADDRESS, _token_id)
+
+    log Transfer(_from, ZERO_ADDRESS, _token_id)
+
+
+@internal
 def _mint(_to: address, _token_id: uint256):
     assert _to != ZERO_ADDRESS  # dev: cannot mint to ZERO_ADDRESS
     assert self.ownerOf[_token_id] == ZERO_ADDRESS  # dev: already minted
