@@ -37,6 +37,7 @@ interface Settler:
         _use_underlying: uint256
     ): payable
     def convert_synth(_dx: uint256, _src_key: bytes32, _dst_key: bytes32): nonpayable
+    def withdraw(_token: address, _receiver: address, _amt: uint256): nonpayable
 
 interface SynthExchanger:
     # actually returns (uint256, uint256, uint256)
@@ -97,9 +98,8 @@ owner: public(address)
 future_owner: public(address)
 
 settler_implementation: public(address)
-available_settlers: address[1024]
-available_settler_count: uint256
-total_settlers: public(uint256)
+available_settlers: public(address[1024])
+available_settler_count: public(uint256)
 
 # token_id -> [local index][global index]
 token_positions: HashMap[uint256, uint256]
@@ -160,6 +160,12 @@ def _burn(_from: address, _token_id: uint256):
     self.totalSupply = global_last_idx
     self.balanceOf[_from] = f_last_idx
     self.ownerOf[_token_id] = ZERO_ADDRESS
+
+    # increase the settler count and append to settler stack
+    settler: address = convert(_token_id % 2 ** 160, address)
+    count: uint256 = self.available_settler_count
+    self.available_settlers[count] = settler
+    self.available_settler_count = count + 1
 
     # reset approval if needed
     if self.getApproved[_token_id] != ZERO_ADDRESS:
@@ -306,6 +312,59 @@ def swap_to_synth(
     token_id: uint256 = bitwise_or(convert(currency_key, uint256), convert(settler, uint256))
     self._mint(_receiver, token_id)
     return token_id
+
+
+@external
+def swap_from_synth(_token_id: uint256, _from: address, _swap_data: SwapData[2], _min_dy: uint256, _receiver: address = msg.sender):
+    owner: address = self.ownerOf[_token_id]
+    assert msg.sender == owner or msg.sender == self.getApproved[_token_id] or self.isApprovedForAll[owner][msg.sender]
+    settler: address = convert(_token_id % 2 ** 160, address)
+    # verify the src_key is correct (_from is a synth)
+    assert Synth(_from).currencyKey() == convert(_token_id - convert(settler, uint256), bytes32)
+    settler_balance: uint256 = ERC20(_from).balanceOf(settler)
+
+    if _swap_data[0]._pool == ZERO_ADDRESS:
+        Settler(settler).withdraw(_from, _receiver, settler_balance)
+        self._burn(owner, _token_id)
+        return
+
+    # perform the first swap
+    Settler(settler).exchange(
+        _swap_data[0]._pool,
+        _from,
+        _swap_data[0]._to,
+        ZERO_ADDRESS,
+        settler_balance,
+        _swap_data[0]._i,
+        _swap_data[0]._j,
+        _swap_data[0]._use_underlying
+    )
+
+    dy: uint256 = ERC20(_swap_data[0]._to).balanceOf(settler)
+    # if we don't do a second swap withdraw and burn
+    if _swap_data[1]._pool == ZERO_ADDRESS:
+        assert dy >= _min_dy
+        Settler(settler).withdraw(_swap_data[0]._to, _receiver, dy)
+        self._burn(owner, _token_id)
+        return
+
+    # perform the second swap
+    Settler(settler).exchange(
+        _swap_data[1]._pool,
+        _swap_data[1]._from,
+        _swap_data[1]._to,
+        ZERO_ADDRESS,
+        dy,
+        _swap_data[1]._i,
+        _swap_data[1]._j,
+        _swap_data[1]._use_underlying
+    )
+    dy = ERC20(_swap_data[1]._to).balanceOf(settler)
+    assert dy >= _min_dy
+    Settler(settler).withdraw(_swap_data[1]._to, _receiver, dy)
+    # burn the token and add the settler to available settlers
+    self._burn(owner, _token_id)
+    return
 
 
 @external
