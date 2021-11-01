@@ -4,6 +4,7 @@
 @license MIT
 @author CurveFi
 """
+from vyper.interfaces import ERC20
 
 
 interface AddressProvider:
@@ -22,6 +23,20 @@ interface RegistryExchange:
 
 interface ERC721Receiver:
     def onERC721Received(_operator: address, _from: address, _token_id: uint256, _data: Bytes[512]) -> uint256: nonpayable
+
+interface Settler:
+    def initialize(): nonpayable
+    def exchange(
+        _pool: address,
+        _from: address,
+        _to: address,
+        _receiver: address,
+        _amount: uint256,
+        _i: uint256,
+        _j: uint256,
+        _use_underlying: uint256
+    ): payable
+    def convert_synth(_dx: uint256, _src_key: bytes32, _dst_key: bytes32): nonpayable
 
 interface SynthExchanger:
     # actually returns (uint256, uint256, uint256)
@@ -50,19 +65,25 @@ event Transfer:
     _to: indexed(address)
     _token_id: indexed(uint256)
 
+event NewSettler:
+    _settler: indexed(address)
+
 
 # swap data used when performing an exchange
 struct SwapData:
     _pool: address
+    _from: address
+    _to: address
     _i: uint256
     _j: uint256
-    _use_underlying: bool
+    _use_underlying: uint256
 
 
 ADDRESS_PROVIDER: constant(address) = 0x0000000022D53366457F9d5E68Ec105046FC4383
 SNX_ADDRESS_RESOLVER: constant(address) = 0x4E3b31eB0E5CB73641EE1E65E7dCEFe520bA3ef2
 # "0x" + b"Exchanger".hex() + "00" * 23
 EXCHANGER_KEY: constant(bytes32) = 0x45786368616e6765720000000000000000000000000000000000000000000000
+ETH_ADDRESS: constant(address) = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
 
 
 balanceOf: public(HashMap[address, uint256])
@@ -75,6 +96,11 @@ base_uri: String[178]
 owner: public(address)
 future_owner: public(address)
 
+settler_implementation: public(address)
+available_settlers: address[1024]
+available_settler_count: uint256
+total_settlers: public(uint256)
+
 # token_id -> [local index][global index]
 token_positions: HashMap[uint256, uint256]
 totalSupply: public(uint256)
@@ -83,7 +109,8 @@ tokenByIndex: public(uint256[MAX_INT128])
 
 
 @external
-def __init__(_base_uri: String[178]):
+def __init__(_settler_implementation: address, _base_uri: String[178]):
+    self.settler_implementation = _settler_implementation
     self.base_uri = _base_uri
 
     self.owner = msg.sender
@@ -202,6 +229,85 @@ def _transfer(_from: address, _to: address, _token_id: uint256):
     log Transfer(_from, _to, _token_id)
 
 
+@payable
+@external
+def swap_to_synth(
+    _from: address,
+    _to: address,
+    _synth: address,
+    _dx: uint256,
+    _min_dy: uint256,
+    _swap_data: SwapData[2],
+    _receiver: address = msg.sender
+) -> uint256:
+    settler: address = ZERO_ADDRESS
+    count: uint256 = self.available_settler_count
+    if count == 0:
+        settler = create_forwarder_to(self.settler_implementation)
+        Settler(settler).initialize()
+        log NewSettler(settler)
+    else:
+        count -= 1
+        settler = self.available_settlers[count]
+        self.available_settler_count = count
+
+    # forward value to the settler
+    if _from == ETH_ADDRESS:
+        assert msg.value == _dx
+    else:
+        resp: Bytes[32] = raw_call(
+            _from,
+            _abi_encode(
+                msg.sender,
+                settler,
+                _dx,
+                method_id=method_id("transferFrom(address,address,uint256)")
+            ),
+            max_outsize=32,
+        )
+        if len(resp) != 0:
+            assert convert(resp, bool)
+
+    # perform the first stable swap
+    Settler(settler).exchange(
+        _swap_data[0]._pool,
+        _swap_data[0]._from,
+        _swap_data[0]._to,
+        ZERO_ADDRESS,
+        _dx,
+        _swap_data[0]._i,
+        _swap_data[0]._j,
+        _swap_data[0]._use_underlying,
+        value=msg.value,
+    )
+    # perform the second stable swap if neccessary
+    if _swap_data[0]._pool != ZERO_ADDRESS:
+        Settler(settler).exchange(
+            _swap_data[1]._pool,
+            _swap_data[1]._from,
+            _swap_data[1]._to,
+            ZERO_ADDRESS,
+            _dx,
+            _swap_data[1]._i,
+            _swap_data[1]._j,
+            _swap_data[1]._use_underlying
+        )
+
+    # convert the synth
+    currency_key: bytes32 = Synth(_synth).currencyKey()
+    Settler(settler).convert_synth(
+        ERC20(_to).balanceOf(settler),
+        Synth(_to).currencyKey(),
+        currency_key,
+    )
+    # make sure not rekt
+    assert ERC20(settler).balanceOf(_synth) >= _min_dy
+
+    token_id: uint256 = bitwise_or(convert(currency_key, uint256), convert(settler, uint256))
+    self._mint(_receiver, token_id)
+    return token_id
+
+
 @external
 def approve(_approved: address, _token_id: uint256):
     """
@@ -310,9 +416,11 @@ def get_swap_data(
         indices: uint256[3] = self._get_indices(pool_0, _from, _to)
         swaps[0] = SwapData({
             _pool: pool_0,
+            _from: _from,
+            _to: _to,
             _i: indices[0],
             _j: indices[1],
-            _use_underlying: convert(indices[2], bool),
+            _use_underlying: indices[2],
         })
         output: uint256 = dy_0
         if _synth != ZERO_ADDRESS:
@@ -379,16 +487,20 @@ def get_swap_data(
     indices: uint256[3] = self._get_indices(best_pool_0, _from, best_complement)
     swaps[0] = SwapData({
         _pool: best_pool_0,
+        _from: _from,
+        _to: best_complement,
         _i: indices[0],
         _j: indices[1],
-        _use_underlying: convert(indices[2], bool)
+        _use_underlying: indices[2]
     })
     indices = self._get_indices(best_pool_1, best_complement, _to)
     swaps[1] = SwapData({
         _pool: best_pool_1,
+        _from: best_complement,
+        _to: _to,
         _i: indices[0],
         _j: indices[1],
-        _use_underlying: convert(indices[2], bool)
+        _use_underlying: indices[2]
     })
 
     output: uint256 = best_dy
