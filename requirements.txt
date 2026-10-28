@@ -1,5 +1,5 @@
 brownie-token-tester>=0.1.0
 eth-brownie>=1.12.4,<2.0.0
-black==19.10b0
+black==26.10.1
 flake8==3.8.4
 isort==5.7.0
